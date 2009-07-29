@@ -3,7 +3,7 @@ Created on Jul 24, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
-@license: AGPLv3 (contact author for other license options)
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 import logging

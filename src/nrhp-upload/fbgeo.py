@@ -4,6 +4,8 @@ Geographic utilities
 Created on Feb 28, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
+@copyright: 2009 Thomas F. Morris
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 import logging
