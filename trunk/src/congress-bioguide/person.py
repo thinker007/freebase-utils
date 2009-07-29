@@ -3,8 +3,8 @@
 Created on Mar 7, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
-@license: Affero GPL V3  http://www.fsf.org/licensing/licenses/agpl-3.0.html
- (contact author for other licensing arrangements)
+@copyright: 2009 Thomas F. Morris
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 import logging
