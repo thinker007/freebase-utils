@@ -1,9 +1,12 @@
 '''
+Module to parse a National Park Service KML file containing locations for the
+National Register of Historic places.
+
 Created on Feb 27, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
-@license: AGPLv3 - contact author for additional licenses
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 import zipfile
