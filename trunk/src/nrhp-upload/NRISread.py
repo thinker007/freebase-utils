@@ -7,7 +7,7 @@ into Freebase.
 
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
-@license: APGLv3
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 from __future__ import with_statement
@@ -42,11 +42,11 @@ freebaseHost = 'www.sandbox-freebase.com' # 'www.sandbox-freebase.com' for testi
 username = 'tfmorris' # set to a valid account for writing
 password = 'password'
 
-fetch = False # Fetch files from National Park Service (only published a few times a year)
+fetch = True # Fetch files from National Park Service (only published a few times a year)
 
 # Inclusion criteria for states, significance, and resource type
 # Empty list [] matches everything
-incState = ['ME'] #[]
+incState = []
 incSignificance = ['IN','NA','ST']# ,'LO','NO'] # INternational, NAtional, STate, LOcal, NOt indicated
 incResourceType = ['B','S','U','O','D'] # Building, Site, strUcture, Object, District,
 incRestricted = True # Include sites with restricted locations (usually archaelogical sites) 
@@ -169,14 +169,14 @@ def queryTypeAndName(session, type, names, createMissing = False):
                 guid = createTopic(session, name, [type])
                 if guid:
                     ids.append(guid)
-                    log.info('Created new topic ', str(guid), '  ', name)
+                    log.info('Created new topic ' + str(guid) + '  ' + name)
                 else:
-                    log.error('Failed to create new entry ', name, ' type: ', type)
+                    log.error('Failed to create new entry ' + name + ' type: ' + type)
         elif len(results) == 1:
             ids.append(results[0]['guid'])
 #            log.debug(['                                                          found ', name])
         else:
-            log.warn(['Non-unique name found for unique lookup ', name,' type: ', type]) 
+            log.warn('Non-unique name found for unique lookup ' + name +' type: ' + type) 
             # TODO We could create a new entry here to be manually disambiguated later
 #            if createMissing:
 #                guid = createTopic(session, name, type)
@@ -232,7 +232,7 @@ def queryArchStyle(session, codes):
     for n in names:
         stats.incr('ArchStyle:',str(n))
     if len(codes) != len(ids):
-        log.warn(['Failed to find Architecture style name/id(s)', codes, names, ' IDs: ', ids])
+        log.warn('Failed to find Architecture style name/id(s)' + repr(codes) + repr(names) + ' IDs: ' + repr(ids))
     return ids
 
 def queryNhrpSignificanceIds(session):
@@ -357,7 +357,7 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
         # TODO: What types of for objects?
         pass
     else:
-        log.error(['unknown resource type ', resourceType, ' for topic ', topicGuid])
+        log.error('unknown resource type ' + resourceType + ' for topic ' + topicGuid)
         # If we've got an area to record, add the Location type no matter what
     for t in mandatoryTypes:
         if not t in types:
@@ -423,7 +423,7 @@ def queryNrisTopic(session, refNum):
         if len(results) == 1:
             return results[0]['guid']
         elif len(results) > 1:
-            log.error(['multiple topics with the same NHRIS reference number ', refNum]) 
+            log.error('multiple topics with the same NHRIS reference number ' + refNum) 
 
 def queryTopic(session, refNum, name, aliases, exactOnly):
     # Look up by Ref # enumeration first
@@ -444,7 +444,9 @@ def queryTopic(session, refNum, name, aliases, exactOnly):
         if not item and aliases:
             log.debug('Trying aliases' + str(aliases))
             for n in aliases:
-                wpid = wikipedia.queryArticle(wpids, name, refNum, exactOnly)
+                results = queryName(session, n)
+                wpids = extractWpids(results)
+                wpid = wikipedia.queryArticle(wpids, refNum, wikiRE, exactOnly)
                 item = wpid2Item(results, wpid)
                 if item:
                     log.info('**Resolved using alias ' + n + ' for name ' + name)
@@ -506,7 +508,7 @@ def reconcileName(session, name, types):
     try:
         response = session.reconcile(name, types)
     except:
-        log.error([ '**Freebase reconciliation service failed : ', name, types])
+        log.error('**Freebase reconciliation service failed : ' + name + repr(types))
         return []  
     return response
 
@@ -596,7 +598,7 @@ class FreebaseSession(HTTPMetawebSession):
         except:
             # TODO - Is the retryable?  Wait and retry
             # if not retryable throw exception
-            log.error([ '**Freebase query MQL failed : ', query])
+            log.error('**Freebase query MQL failed : ' + repr(query))
             return None
         
     #    log.debug([ '    Response = ',response])    
@@ -610,7 +612,7 @@ class FreebaseSession(HTTPMetawebSession):
             # TODO - Is the retryable?  Wait and retry
             # if not retryable throw exception
             # check for quota problems - /api/status/error/mql/access Too many writes
-            log.error(['**Freebase write MQL failed : ', query])
+            log.error('**Freebase write MQL failed : ' + repr(query))
             return []
         
         #log.debug(['    Response = ',response])
@@ -631,13 +633,14 @@ def main():
         for filename in filenames:
             url = baseUrl + filename
             log.info('Fetching ' + url)
-            urllib.urlretrieve(urllib.quote(url), workDir + filename)
-        for filename in kmzFiles:
-            url = kmzBaseUrl + filename
-            log.info('Fetching ' + url)
-            urllib.urlretrieve(urllib.quote(url), workDir + filename)
-        log.info('Fetching ' + geoUrl)
-        urllib.urlretrieve(urllib.quote(geoUrl), workDir + geoFile)
+            urllib.urlretrieve(url, workDir + filename)
+#        for filename in kmzFiles:
+#            url = kmzBaseUrl + filename
+#            log.info('Fetching ' + url)
+#            urllib.urlretrieve(url, workDir + filename)
+
+#        log.info('Fetching ' + geoUrl)
+#        urllib.urlretrieve(urllib.quote(geoUrl), workDir + geoFile)
     else:
         log.debug('Using local files (no fetch from NHRIS web site)')
         
@@ -727,7 +730,7 @@ def main():
         area = acre2sqkm(rec['ACRE'])
         
         if not refNum in countyTable:
-            log.warn(['Warning - no county for ', refNum, restricted, name])
+            log.warn('Warning - no county for ' + ' '.join([refNum, restricted, name]))
             state=''
             cityTown=''
         else:
@@ -742,12 +745,11 @@ def main():
                         cityTown = ''
        
         category = lookup('NOMNAMED', refNum)
+        categoryGuid = None
         if category:
             category = category[0].lower().strip()
             if category in catGuids:
                 categoryGuid = catGuids[category]
-            else:
-                categoryGuid = None
             
         # Skip if not a National Historic Landmark, etc
         if not incNonNominated and category == '':
@@ -833,7 +835,7 @@ def main():
                     coords = coordinates[refNum][:2] # ignore elevation, it's always 0
                     response = checkAddGeocode(session, topicGuid, coords)
         else:
-            log.debug([ 'Skipping location info for object type ', resourceType, refNum, name])
+            log.debug('Skipping location info for object type ' + ' '.join([resourceType, refNum, name]))
 
         # Add Listed Site info
         # TODO: Check for existing entry that we can update with more specific date, category, etc
@@ -869,13 +871,7 @@ def main():
     endTime = datetime.datetime.now()
     log.info('Ending at ' + str(endTime) + '  elapsed time = ' + str(endTime-startTime))
     log.info('==Statistics==')
-    for k, v in sorted(stats.iteritems()):
-        certm = tables['CERTM']
-        if k in certm:
-            tag = 'CERTM:' +certm[k][0] + ' (' + k + ')'
-        else:
-            tag = k
-        log.info( str(v) + ' ' + str(tag))
+    log.info(stats.dump())
     
     # Clean up our temporary directory
 #    print 'Cleaning ', tempDir
