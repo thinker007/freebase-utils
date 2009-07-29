@@ -1,9 +1,11 @@
 '''
+A super simple package of counters with two levels of categorization.
+
 Created on Jul 26, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
-@license: AGPLv3 (contact author for other license options)
+@license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 from collections import defaultdict
 
@@ -33,7 +35,7 @@ class Stats(defaultdict):
                           for category,cdict in self.iteritems()])
 
     def dumpline(self,cdict):
-        return "\n".join(["%10s :%5d" % (key,count) for key,count in cdict.iteritems()])
+        return "\n    ".join(["%20s :%5d" % (key,count) for key,count in cdict.iteritems()])
     
 def __test():
     s = Stats()
