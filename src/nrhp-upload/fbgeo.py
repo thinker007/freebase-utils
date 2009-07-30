@@ -67,6 +67,7 @@ def queryUsStateGuids(session):
 
 def queryCityTownGuid(session, townName, stateGuid):
     '''Query server for town by name and return single Id or None '''
+    # TODO special case Washington, DC so it doesn't fail with Freebase's current setup
     results = queryCityTown(session, townName, stateGuid)
     if len(results) == 1:
         return results[0]['guid']
