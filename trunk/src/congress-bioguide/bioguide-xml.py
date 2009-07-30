@@ -17,7 +17,7 @@ from freebase.api import HTTPMetawebSession, MetawebError
 
 from freebase_person import FbPerson
 
-host = 'www.freebase.com'
+host = 'www.sandbox-freebase.com' # 'www.freebase.com'
 username = None #'tfmorris'
 #password = 'password'
 

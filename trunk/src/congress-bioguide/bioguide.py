@@ -16,9 +16,9 @@ from freebase.api import HTTPMetawebSession, MetawebError
 
 from freebase_person import FbPerson
 
-host = 'www.freebase.com'
+host = 'www.sandbox-freebase.com' #'www.freebase.com'
 username = 'tfmorris'
-password = 'tommorris'
+password = 'password'
 
 desired_types = ['/people/person', 
                 '/people/deceased_person', 
