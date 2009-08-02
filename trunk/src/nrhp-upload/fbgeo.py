@@ -6,13 +6,16 @@ Created on Feb 28, 2009
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
+
+TODO add name transformations for things like Mt., St., etc.
 '''
 
 import logging
 from math import cos, sqrt
 #from freebase.api import HTTPMetawebSession, MetawebError
 
-log = logging.getLogger('fbgeo')
+_log = logging.getLogger('fbgeo')
+_usStates = {}
 
 def approximateDistance(a, b):
     '''Compute approximate local flat earth distance between two points represented by lat/long tuples'''
@@ -54,7 +57,7 @@ def parseGeocode(geocode):
 
 
 def queryUsStateGuids(session):
-    '''Query server and return dict of ids for states keyed by 2 letter state code '''
+    '''Query Freebase and return dict of ids for states keyed by 2 letter state code '''
     query = [{'guid' : None,
                'id' : None,
                'name' : None,
@@ -65,10 +68,30 @@ def queryUsStateGuids(session):
     results = session.fbRead(query)
     return dict([ (state['iso_3166_2_code'][3:5],state['guid']) for state in results])
 
-def queryCityTownGuid(session, townName, stateGuid):
-    '''Query server for town by name and return single Id or None '''
-    # TODO special case Washington, DC so it doesn't fail with Freebase's current setup
-    results = queryCityTown(session, townName, stateGuid)
+def _initUsStateGuids(session):
+    if not _usStates:
+        _usStates.update(queryUsStateGuids(session))
+
+def queryUsStateGuid(session, state):
+    '''Return Guid for state from cache'''
+    _initUsStateGuids(session)
+    if state in _usStates:
+        return _usStates[state]
+    return None
+
+def queryCityTownGuid(session, townName, stateGuid, countyName=None):
+    '''Query Freebase for town by name and return single Id or None '''
+
+    townName = townName.replace('(Independent City)','').strip()
+
+    # special case Washington, DC since it's not really contained by itself
+    if stateGuid == _usStates['DC'] and townName == 'Washington':
+        return _usStates['DC']
+    
+    results = queryCityTown(session, townName, stateGuid, countyName)
+    if not results:
+        # try again without county if we got no exact match
+        results = queryCityTown(session, townName, stateGuid)
     if len(results) == 1:
         return results[0]['guid']
     elif len(results) == 2:
@@ -79,26 +102,33 @@ def queryCityTownGuid(session, townName, stateGuid):
         elif cdp in results[1]['type'] and not cdp in results[0]['type']:
             result = results[0]['guid']
         else:
-            log.warn('Multiple matches for city/town ', townName, ' in state ', stateGuid)
+            # TODO One cause of multiple matches are city/town pairs with the same name
+            # they often can be treated as a single place, so we might be able to figure
+            # out a way to deal with this
+            _log.error('Multiple matches for city/town '+townName+' in state '+stateGuid)
             return None
-        log.warn('Multiple matches for city/town ' + townName + ' in state ' + stateGuid +' picked nonCDP ' + result)
+        _log.warn('Multiple matches for city/town ' + townName + ' in state ' + stateGuid +' picked nonCDP ' + result)
         return result
     return None
     
-def queryCityTown(session, townName, stateGuid):
-    '''Query server and return list of ids for any matching towns '''
+
+def queryCityTown(session, townName, stateGuid, countyName = None):
+    '''Query Freebase and return list of ids for any matching towns '''
+    '''county name is matched as leading string to account for both Suffolk and Suffolk County forms'''
     query = [{'guid' : None,
                'id' : None,
+               # TODO check aliases as well
                'name' : townName,
-               '/location/location/containedby' : [{'guid' : stateGuid}],
+               '/location/location/containedby' : {'guid' : stateGuid},
                't:type' : '/location/citytown',
                'type' : []
-    # TODO - Add a not Census Designated Place term?
                }]
+    if countyName:
+        query[0]['cb:/location/location/containedby~='] = '^'+countyName
     return session.fbRead(query)
 
 def queryCountyGuid(session, name, stateGuid):
-    '''Query server and return ID for matching county in state'''
+    '''Query Freebase and return ID for matching county in state'''
     query = [{'guid' : None,
                'id' : None,
                'name|=' : [name, name + ' county'],
@@ -110,20 +140,20 @@ def queryCountyGuid(session, name, stateGuid):
         return results[0]['guid']
 
 def queryLocationContainedBy(session, guid):
-    '''Query server for locations associated with our topic'''
+    '''Query Freebase for locations associated with our topic'''
     query = {'guid' :guid,
                'id' : None,
                'name' : None,
-               'contained_by' : [],
+               'containedby' : [],
                'type' : '/location/location'
                }
     results = session.fbRead(query)
     if results != None:
-        return results['contained_by']
+        return results['containedby']
     return None
 
 def queryGeoLocation(session, guid):
-    '''Query server and return Geocode object for given location (or None)'''
+    '''Query Freebase and return Geocode object for given location (or None)'''
     query = {'guid' : guid,
                'geolocation' : {},
                'type' : '/location/location'
@@ -143,7 +173,7 @@ def queryGeoLocation(session, guid):
     return session.fbRead(query)  
     
 def addGeocode(session, topicGuid, coords):
-    query = {'guid': topicId, 
+    query = {'guid': topicGuid, 
              'type': '/location/location', 
              'geolocation': {'create': 'unless_connected', 
                              'type': '/location/geocode', 
