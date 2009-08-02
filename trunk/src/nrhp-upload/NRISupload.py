@@ -140,6 +140,9 @@ def queryName(session, name):
               'id' : None,
               'type' : [],
               't:type' : '/common/topic',
+              # Exclude NRIS listings because they would have matched exactly on refnum
+              't2:type' : {'id':'/base/usnris/nris_listing',
+                           'optional':'forbidden'},
               'key' : [{'namespace' : '/wikipedia/en_id',
                        'value' : None
                        }]
@@ -270,6 +273,7 @@ def addType(session, guids, types):
 
 def addAliases(session, guid, aliases):
     if aliases:
+        # TODO Filter out low quality aliases
         query = {'guid': guid, 
                  '/common/topic/alias': [{'connect':'insert', 
                                           'lang': '/lang/en',
@@ -299,12 +303,13 @@ def checkAddGeocode(session, topicGuid, coords):
     if not geocode:
         response = fbgeo.addGeocode(session, topicGuid, coords)
     else:
+        response = None
         location = fbgeo.parseGeocode(geocode)
         if location:
             if fbgeo.swappedLatLong(location, coords):
                 print '*** Lat/long appear swapped ', geocode, coords
-            #                                print '*** Swapping geocode lat/long', geocode, coords
-            #                                fbgeo.updateGeocode(session, geocode['guid'], coords[:2])
+            #   print '*** Swapping geocode lat/long', geocode, coords
+            #   response = fbgeo.updateGeocode(session, geocode['guid'], coords[:2])
             else:
                 distance = fbgeo.approximateDistance(location, coords)
                 if (distance > 0.1):
@@ -349,7 +354,7 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
     elif resourceType == 'D':
         types.append('/location/location')
     elif resourceType == 'U':
-        pass
+        types.append('/location/location')
     # Some of these are boats, so we can't use structure
     #            types.append('/architecture/structure')
     # TODO What types?
@@ -377,15 +382,19 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
     query = {'guid': topicGuid, 
              'type': '/architecture/structure'}
     # TODO refactor into fbGEO
-    if stateGuid or streetAddress:
-        query['address'] = {'create': 'unless_connected', 
-                            'type': '/location/mailing_address', 
-                            'street_address': streetAddress, 
-                            'state_province_region': {'connect': 'insert', 
-                                                      'guid': stateGuid}}
-        if cityTownGuid:
-            query['address']['citytown'] = {'connect': 'insert', 
-                                            'guid': cityTownGuid}        
+    addressSubQuery = {}
+    if streetAddress:
+        addressSubQuery.update({'street_address': streetAddress, 
+                                'state_province_region': {'connect': 'insert', 
+                                                          'guid': stateGuid}})
+    if cityTownGuid:
+        addressSubQuery.update({'citytown' : {'connect': 'insert', 
+                                        'guid': cityTownGuid}})
+    if addressSubQuery:
+        addressSubQuery.update({'create': 'unless_connected', 
+                                'type': '/location/mailing_address'})
+        query['address'] = addressSubQuery
+        
     if archIds:
         query['architect'] = [{'connect': 'insert', 'guid': i} for i in archIds]
         stats.incr('Wrote', 'Architect')
@@ -393,7 +402,26 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
         query['architectural_style'] = [{'connect': 'insert', 'guid': i} for i in archStyleIds]
         stats.incr('Wrote', 'ArchStyle')    
     return session.fbWrite(query)
-   
+
+
+def addMisc(session, topicGuid, significantPersonIds, significantYears, culture):
+    query = {}
+    if significantYears:
+        query['/base/usnris/nris_listing/significant_year'] = [{'connect': 'insert', 'value': y} for y in significantYears]
+    
+    if significantPersonIds:
+        addNrisListing(session, significantPersonIds, topicGuid)
+        query['/base/usnris/nris_listing/significant_person'] = [{'connect': 'insert', 'guid': guid} for guid in significantPersonIds]
+    # TODO add /base/usnris/significant_person type to person objects
+    
+    if culture:
+        query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect': 'insert', 'lang': '/lang/en', 'value': c} for c in culture]
+    # TODO: Try to match free form text to a /people/ethnicity topic
+    
+    if query:
+        query['guid'] = topicGuid
+        return session.fbWrite(query)
+           
 def createTopic(session, name, types):
     common = "/common/topic"
     if not common in types: # make sure it's a topic too
@@ -415,19 +443,21 @@ def queryNrisTopic(session, refNum):
     '''Query server for a unique topic indexed by our NRIS reference number'''
     query = [{'guid' : None,
                'id' : None,
+               'name' : None,
                '/base/usnris/nris_listing/item_number' : refNum,
                'type' : '/protected_sites/listed_site'
                }]
     results = session.fbRead(query)
-    if results != None:
+    if results:
         if len(results) == 1:
-            return results[0]['guid']
+            return results[0]['guid'],results[0]['name']
         elif len(results) > 1:
             log.error('multiple topics with the same NHRIS reference number ' + refNum) 
+    return None, None
 
 def queryTopic(session, refNum, name, aliases, exactOnly):
     # Look up by Ref # enumeration first
-    topicGuid = queryNrisTopic(session, refNum)
+    topicGuid,topicName = queryNrisTopic(session, refNum)
 
     if not topicGuid:
         results = queryName(session, name)
@@ -465,9 +495,10 @@ def queryTopic(session, refNum, name, aliases, exactOnly):
             
         if item:
            topicGuid = item['guid']
+           topicName = item['name']
     else:
         stats.incr('TopicMatch','RefNumEnumerationMatch')
-    return topicGuid
+    return topicGuid,topicName
             
 def loadTable(dbFile):
     '''Load a table with index in the first column into a dict'''
@@ -582,17 +613,17 @@ def wpid2Item(items,wpid):
 
 
 def acre2sqkm(acre):
-    if acre == '.9': # Special signal value indicating < 1 acre
+    if acre == '9': # Special signal value indicating < 1 acre
         acre = 0    
     if acre == '':
         acre = 0
     # TODO double check to be sure this is 1/10s of an acre
-    return float(acre) * 0.1 * 0.004047 # convert to sq. km
+    return fbgeo.acre2sqkm(float(acre) * 0.1)
 
 class FreebaseSession(HTTPMetawebSession):
     
     def fbRead(self, query):
-    #    log.debug([  '  Read query = ', query])
+        #log.debug([  '  Read query = ', query])
         try:
             response = self.mqlread(query)
         except:
@@ -600,7 +631,6 @@ class FreebaseSession(HTTPMetawebSession):
             # if not retryable throw exception
             log.error('**Freebase query MQL failed : ' + repr(query))
             return None
-        
     #    log.debug([ '    Response = ',response])    
         return response
 
@@ -614,7 +644,6 @@ class FreebaseSession(HTTPMetawebSession):
             # check for quota problems - /api/status/error/mql/access Too many writes
             log.error('**Freebase write MQL failed : ' + repr(query))
             return []
-        
         #log.debug(['    Response = ',response])
         return response
             
@@ -634,13 +663,12 @@ def main():
             url = baseUrl + filename
             log.info('Fetching ' + url)
             urllib.urlretrieve(url, workDir + filename)
-#        for filename in kmzFiles:
-#            url = kmzBaseUrl + filename
-#            log.info('Fetching ' + url)
-#            urllib.urlretrieve(url, workDir + filename)
-
+        for filename in kmzFiles:
+            url = kmzBaseUrl + urllib.quote(filename)
+            log.info('Fetching ' + url)
+            urllib.urlretrieve(url, workDir + filename)
 #        log.info('Fetching ' + geoUrl)
-#        urllib.urlretrieve(urllib.quote(geoUrl), workDir + geoFile)
+#        urllib.urlretrieve(geoUrl, workDir + geoFile)
     else:
         log.debug('Using local files (no fetch from NHRIS web site)')
         
@@ -648,16 +676,16 @@ def main():
     unzipFiles([workDir+masterFile, workDir+detailFile], tempDir)         
     
     # Load geo data
-    log.debug('Loading geo data from KML/KMZ files')
-#    coordinates = NRISkml.parseFiles([workDir + f for f in kmzFiles])
-    # TODO: Switch this to use spatial.mdb
+    log.info('Loading geo data from KML/KMZ files')
     coordinates = {}
+    # TODO: Switch this to use spatial.mdb
+    coordinates = NRISkml.parseFiles([workDir + f for f in kmzFiles])
     
     # Read in all our master tables '*M.DBF' and detail xref tables *D.DBF
     for table in lookupTables:
         tables[table] = loadTable(tempDir + table + '.DBF')
 
-    # Lookup and cache the state column index in our location (aka county) table
+    # Lookup and cache the column indexes in our location (aka county) table
     countyTable = tables['COUNTYD']
     stateColumn = countyTable['__fields__'].index('STATECD') - 1
     cityColumn = countyTable['__fields__'].index('CITY') - 1
@@ -670,7 +698,6 @@ def main():
     session.login()
 
     # Query server for IDs of states, categories, and significance levels
-    states = fbgeo.queryUsStateGuids(session)
     catGuids = queryNhrpCategoryGuids(session)
     significanceGuids = queryNhrpSignificanceIds(session)
     # TODO: We could lookup and cache IDs for Architects, and Architectural Styles too
@@ -684,194 +711,193 @@ def main():
     totalCount = len(db)
     log.info('** Processing ' + str(totalCount) + ' records in main record table **')
     count = 0
-    for rec in db:
-        count += 1
-        stats.incr('General','TotalRecords')
-        if count < startingRecordNumber:
-            continue
-        # Only entries which are Listed or National Landmarks count for our purposes
-        status = rec['CERTCD']
-#        stats.incr('CertStatus',status)
-        if not status == 'LI' and not status == 'NL':
-            continue
-
-        refNum = rec['REFNUM'] # key which links everything together
-
-        stats.incr('CertStatus','ListedRecords')
-        d = rec['CERTDATE']
-        certDate = datetime.date(int(d[0:4]),int(d[4:6]),int(d[6:8]))
-
-        # Significance Level IN=International, NA=National, ST=State, LO=Local, NO=NotIndicated
-        significance = lookup1('LEVSGD', refNum);
-        stats.incr('Significance',str(significance))
-
-        # Building, District, Object, Site, strUcture
-        # U used for some non-structure type things like boats, etc, so be careful!
-        resourceType = rec['RETYPECD']
-        stats.incr('ResourceType', str(resourceType))
-
-        # Skip records which don't match our significance or resource type criteria
-        if len(incSignificance) > 0 and not significance in incSignificance:
-            continue
-        if len(incResourceType) > 0 and not resourceType in incResourceType:
-            continue
-
-        name = normalizeName(rec['RESNAME'])
-                    
-        restricted = (not rec['RESTRICT'] == '') # address restricted
-        if restricted:
-            stats.incr('General','LocationInfoRestricted')
-            # Skip restricted address sites for now (mostly archaelogical sites)
-            if not incRestricted:
-#               log.debug([ 'Skipping restricted site location', restricted,refNum, name])
+    try:
+        for rec in db:
+            # TODO do we want a try block here to allow us to continue with other records
+            # if we have a problem with this one
+            count += 1
+            stats.incr('General','TotalRecords')
+            if count < startingRecordNumber:
                 continue
-                    
-        streetAddress = rec['ADDRESS']
-        area = acre2sqkm(rec['ACRE'])
-        
-        if not refNum in countyTable:
-            log.warn('Warning - no county for ' + ' '.join([refNum, restricted, name]))
-            state=''
-            cityTown=''
-        else:
-            for entry in countyTable[refNum]:
-                if entry[primeColumn] != '':
-                    state = entry[stateColumn]
-                    county = lookup1('COUNTYM',entry[countyColumn])[0]
-                    if entry[vicinityColumn] == '':
-                        cityTown = entry[cityColumn]
-                    else:
-                        # Just in the vicinity of, don't record contained by
-                        cityTown = ''
-       
-        category = lookup('NOMNAMED', refNum)
-        categoryGuid = None
-        if category:
-            category = category[0].lower().strip()
-            if category in catGuids:
-                categoryGuid = catGuids[category]
+            # Only entries which are Listed or National Landmarks count for our purposes
+            status = rec['CERTCD']
+    #        stats.incr('CertStatus',status)
+            if not status == 'LI' and not status == 'NL':
+                continue
+    
+            refNum = rec['REFNUM'] # key which links everything together
+    
+            stats.incr('CertStatus','ListedRecords')
+            d = rec['CERTDATE']
+            certDate = datetime.date(int(d[0:4]),int(d[4:6]),int(d[6:8]))
+    
+            # Significance Level IN=International, NA=National, ST=State, LO=Local, NO=NotIndicated
+            significance = lookup1('LEVSGD', refNum);
+            stats.incr('Significance',str(significance))
+    
+            # Building, District, Object, Site, strUcture
+            # U used for some non-structure type things like boats, etc, so be careful!
+            resourceType = rec['RETYPECD']
+            stats.incr('ResourceType', str(resourceType))
+    
+            # Skip records which don't match our significance or resource type criteria
+            if len(incSignificance) > 0 and not significance in incSignificance:
+                continue
+            if len(incResourceType) > 0 and not resourceType in incResourceType:
+                continue
+    
+            name = normalizeName(rec['RESNAME'])
+                        
+            restricted = (not rec['RESTRICT'] == '') # address restricted
+            if restricted:
+                stats.incr('General','LocationInfoRestricted')
+                # Skip restricted address sites for now (mostly archaelogical sites)
+                if not incRestricted:
+    #               log.debug([ 'Skipping restricted site location', restricted,refNum, name])
+                    continue
+                        
+            streetAddress = rec['ADDRESS']
+            area = acre2sqkm(rec['ACRE'])
             
-        # Skip if not a National Historic Landmark, etc
-        if not incNonNominated and category == '':
-            continue
-        
-        # Skip states not selected
-        stats.incr('State', str(state))
-        if len(incState) > 0 and not state in incState:
-            continue 
-
-        # If we've got more than one listing with this name, require exact refNum match
-        aliases = lookupAliases(refNum)
-        topicGuid = queryTopic(session, refNum, name, aliases, len(names[name]) > 1)
-        
-        # Still don't have a match, punt...
-        if not topicGuid:
-            # TODO create a new topic with the right name
-            topicGuid = createTopic(session, name, [])
-            log.debug('No Freebase topic - created ' 
-                      + ' '.join([topicGuid, refNum, resourceType, state, str(significance), name, ' - ', category]))
-            stats.incr('TopicMatch','CreatedNew')
-            
-        addAliases(session, topicGuid, aliases)
-        
-        # TODO Check for incompatible/unlikely types (book, movie, etc)
-        # TODO Check for compatible/reinforcing types (e.g. anything from protected site)
-        # TODO Check Building.Address and Location.ContainedBy for compatible addresses
-        
-        # 'FM' Federated States of Micronesia is in database, but not a real state
-        stateGuid = None
-        cityTownGuid = None
-        containedByGuid = None
-        if state in states:
-            stateGuid = states[state]
-            if cityTown:
-                cityTownGuid = fbgeo.queryCityTownGuid(session, cityTown, stateGuid)
-            # Use county as backup if vicinity flag was set or our town lookup failed
-            if not cityTownGuid:
-                if cityTown:
-                    log.warn('Failed to look up city/town ' + cityTown + ' in ' +  state)
-                containedByGuid = fbgeo.queryCountyGuid(session, county, stateGuid)
+            if not refNum in countyTable:
+                log.warn('Warning - no county for ' + ' '.join([refNum, restricted, name]))
+                state=''
+                cityTown=''
             else:
-                containedByGuid = cityTownGuid
-        
-        # TODO definition of this field is actually "architect, builder, or engineer"
-        # so we could try harder to find a match in other disciplines
-        # currently we throw away any builders or engineers
-        archIds = queryArchitect(session, lookup('ARCHTECD', refNum))
-        archStyleIds = queryArchStyle(session, lookup('ARSTYLD', refNum))
-        
-        significantNames = [normalizePersonName(n) for n in lookup('SIGNAMED', refNum)]
-        significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, True)
-        
-        significantYears = uniquifyYears(lookup('SIGYEARD', refNum))
-
-        culture = lookup('CULTAFFD', refNum)
-        if culture:
-            print ' Culture: ' + str(culture)
-        
-        log.debug( '  %2.0f%% ' % (count*100.0/totalCount) + ' '.join([str(count), refNum, resourceType, state, str(significance), str(certDate), name, category]))
-
-        # Write/update information
-        sigGuid = significance2guid(significance, significanceGuids)
-        mandatoryTypes = ['/location/location'] if area > 0 else []
-        response = updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes, sigGuid)
-
-        # Handle location
-        if resourceType == 'B':
-            query = addBuildingInfo(session, streetAddress, topicGuid, stateGuid, 
-                                    cityTownGuid, archIds, archStyleIds)
-
-        if resourceType == 'S' or resourceType == 'D' or resourceType == 'B':
-            if stateGuid:
-                containerGuids = [stateGuid]
-                if containedByGuid:
-                    containerGuids.append(containedByGuid)
-                response = fbgeo.addContainedBy(session, topicGuid, containerGuids)
-
-                if area > 0:
-                    response = fbgeo.addArea(session, topicGuid, area)
+                for entry in countyTable[refNum]:
+                    if entry[primeColumn] != '':
+                        state = entry[stateColumn]
+                        county = lookup1('COUNTYM',entry[countyColumn])[0]
+                        if entry[vicinityColumn] == '':
+                            cityTown = entry[cityColumn]
+                        else:
+                            # Just in the vicinity of, don't record contained by
+                            cityTown = ''
+           
+            category = lookup('NOMNAMED', refNum)
+            categoryGuid = None
+            if category:
+                category = category[0].lower().strip()
+                if category in catGuids:
+                    categoryGuid = catGuids[category]
                 
-                if refNum in coordinates:
-                    coords = coordinates[refNum][:2] # ignore elevation, it's always 0
-                    response = checkAddGeocode(session, topicGuid, coords)
-        else:
-            log.debug('Skipping location info for object type ' + ' '.join([resourceType, refNum, name]))
+            # Skip if not a National Historic Landmark, etc
+            if not incNonNominated and category == '':
+                continue
+            
+            # Skip states not selected
+            stats.incr('State', str(state))
+            if len(incState) > 0 and not state in incState:
+                continue 
+    
+            aliases = lookupAliases(refNum)
+            # We used to only require an exact match if we had more than one listing
+            # with a name, but we're being stricter now to prevent potential false matches
+            #topicGuid,topicName = queryTopic(session, refNum, name, aliases, len(names[name]) > 1)
+            topicGuid,topicName = queryTopic(session, refNum, name, aliases, True)
+            
+            # TODO return a list of candidate topics to be queue for human review
+    
+            # TODO Check for incompatible/unlikely types (book, movie, etc)
+            # TODO Check for compatible/reinforcing types (e.g. anything from protected site)
+            # TODO Check Building.Address and Location.ContainedBy for (in)compatible addresses
+            
+            # Still don't have a match, punt...
+            if not topicGuid:
+                # TODO queue potential new topics for human verification?
+                topicGuid = createTopic(session, name, [])
+                topicName = name
+                log.debug('No Freebase topic - created ' 
+                          + ' '.join([topicGuid, refNum, resourceType, state, str(significance), name, ' - ', category]))
+                stats.incr('TopicMatch','CreatedNew')
+            
+            aliases.append(name)
+            if topicName in aliases:
+                aliases.remove(topicName) # We might have matched on an alias
+            addAliases(session, topicGuid, aliases)
+            
+            # 'FM' Federated States of Micronesia is in database, but not a real state
+            cityTownGuid = None
+            containedByGuid = None
+            stateGuid = fbgeo.queryUsStateGuid(session, state)
+    
+            if stateGuid:
+                if cityTown:
+                    cityTownGuid = fbgeo.queryCityTownGuid(session, cityTown, stateGuid, county)
+                    if not cityTownGuid:
+                        # TODO One cause of this are city/town pairs with the same name
+                        # they often can be treated as a single place, so we might be able to figure
+                        # out a way to deal with this
+                        log.warn('Failed to look up city/town '+cityTown+' in '+county+', '+state)
+                    containedByGuid = cityTownGuid
+                # Use county as backup if vicinity flag was set or our town lookup failed
+                if not cityTownGuid:
+                    containedByGuid = fbgeo.queryCountyGuid(session, county, stateGuid)
+            
+            # TODO definition of this field is actually "architect, builder, or engineer"
+            # so we could try harder to find a match in other disciplines
+            # currently we throw away any builders or engineers
+            archIds = queryArchitect(session, lookup('ARCHTECD', refNum))
+            archStyleIds = queryArchStyle(session, lookup('ARSTYLD', refNum))
+            
+            significantNames = [normalizePersonName(n) for n in lookup('SIGNAMED', refNum)]
+            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, True)
+            
+            significantYears = uniquifyYears(lookup('SIGYEARD', refNum))
+    
+            culture = lookup('CULTAFFD', refNum)
+            if culture:
+                for c in culture:
+                    stats.incr('Culture', c)
+                log.debug(' Culture: ' + str(culture))
+            
+            log.debug( '  %2.0f%% ' % (count*100.0/totalCount) + ' '.join([str(count), refNum, resourceType, state, str(significance), str(certDate), name, category]))
+    
+            # Write/update information
+            sigGuid = significance2guid(significance, significanceGuids)
+            mandatoryTypes = ['/location/location'] if area > 0 else []
+            response = updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes, sigGuid)
+    
+            # Handle location
+            if resourceType == 'B': # TODO add type str'U'cture ?
+                query = addBuildingInfo(session, streetAddress, topicGuid, stateGuid, 
+                                        cityTownGuid, archIds, archStyleIds)
+    
+            if not resourceType == 'O':
+                if stateGuid:
+                    containerGuids = [stateGuid]
+                    if containedByGuid:
+                        containerGuids.append(containedByGuid)
+                    response = fbgeo.addContainedBy(session, topicGuid, containerGuids)
+    
+                    if area > 0:
+                        response = fbgeo.addArea(session, topicGuid, area)
+                    
+                    if refNum in coordinates:
+                        coords = coordinates[refNum][:2] # ignore elevation, it's always 0
+                        response = checkAddGeocode(session, topicGuid, coords)
+            else:
+                log.debug('Skipping location info for object type ' + ' '.join([resourceType, refNum, name]))
+    
+            # Add Listed Site info
+            # TODO: Check for existing entry that we can update with more specific date, category, etc
+            response = addListedSite(session, topicGuid, categoryGuid, certDate)
+    
+            # Add any significance year, people and cultural affiliations
+            addMisc(session, topicGuid, significantPersonIds, significantYears, culture)
+            
+            # TODO: Create a 2nd listing if we've got two certification dates and statuses
+            
+    #        if name.lower().find(' and ') >= 0:
+    #            stats.incr('PossibleCompoundTopic')
+                # Flag/log somewhere
 
-        # Add Listed Site info
-        # TODO: Check for existing entry that we can update with more specific date, category, etc
-        response = query = addListedSite(session, topicGuid, categoryGuid, certDate)
-
-        # Add any significance year, people and cultural affiliations
-        query = {}
-        if significantYears:
-            query['/base/usnris/nris_listing/significant_year'] = [{'connect' : 'insert' , 'value' : y} for y in significantYears]
-        if significantPersonIds:
-            addNrisListing(session, significantPersonIds, topicGuid)
-            query['/base/usnris/nris_listing/significant_person'] = [{'connect' : 'insert', 'guid' : guid} for guid in significantPersonIds]
-            # TODO add /base/usnris/significant_person type to person objects
-        if culture:
-            query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect' : 'insert', 
-                                                                        'lang': '/lang/en',
-                                                                        'value' : c
-                                                                        } for c in culture]
-            # TODO: Try to match free form text to a /people/ethnicity topic
-
-        if query:
-            query['guid'] = topicGuid
-            response =session.fbWrite(query)
-        
-        # TODO: Create a 2nd listing if we've got two certification dates and statuses
-
-        
-#        if name.lower().find(' and ') >= 0:
-#            stats.incr('PossibleCompoundTopic')
-            # Flag/log somewhere
-        
-    db.close()
-    endTime = datetime.datetime.now()
-    log.info('Ending at ' + str(endTime) + '  elapsed time = ' + str(endTime-startTime))
-    log.info('==Statistics==')
-    log.info(stats.dump())
+    finally:
+        db.close()
+        endTime = datetime.datetime.now()
+        log.info('Ending at ' + str(endTime) + '  elapsed time = ' + str(endTime-startTime))
+        log.info('==Statistics==')
+        log.info(stats.dump())
     
     # Clean up our temporary directory
 #    print 'Cleaning ', tempDir
@@ -879,6 +905,8 @@ def main():
     
 if __name__ == '__main__':
      main() 
+
+
 
 
 
