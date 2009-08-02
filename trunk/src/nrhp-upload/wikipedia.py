@@ -15,6 +15,7 @@ from freebase.api import HTTPMetawebSession, MetawebError
 
 from simplestats import Stats
 
+_PERIOD = 0.5 # Don't query any more often then every _PERIOD seconds 
 log = logging.getLogger('wikipedia')
 
 # Generator for intervals which give 1 sec. intervals (minus time already spent)
@@ -27,7 +28,7 @@ def waitTimeGenerator(interval):
         t1 = t2
         yield wait
 # Global wait time generator
-__waiter = waitTimeGenerator(1.0)
+__waiter = waitTimeGenerator(_PERIOD)
 
 def fetch(wpid):
     # Wikipedia will reject requests without user agent field set
