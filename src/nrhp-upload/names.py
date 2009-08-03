@@ -30,12 +30,24 @@ def normalizePersonName(name):
     # TODO use regex
     for s in [', et al.', ',et al.', ', et al', ',et al', ', et.al.' ]:
         name = name.replace(s, '')
-            
+       
     pieces = name.split(',')
     if len(pieces) == 1:
         return name
     elif len(pieces) == 2:
-        return ' '.join([pieces[1].strip(), pieces[0].strip()])
+        givennames = pieces[1].strip()
+        suffix = ''
+        g = givennames.lower()
+        if g.endswith('jr.'):
+            givennames = givennames[:-4]
+            suffix = ' Jr.'
+        if g.endswith('jr'):
+            givennames = givennames[:-3]
+            suffix = ' Jr.'
+        if g.endswith('iii'):
+            givennames = givennames[:-4]
+            suffix = ' III'
+        return ' '.join([givennames, pieces[0].strip()])+suffix
     elif len(pieces) == 3:
         # TODO Do we want John Smith Jr or John Smith, Jr ?
         return ' '.join([pieces[1].strip(), pieces[0].strip()]) + ', ' + pieces[2].strip()
@@ -120,6 +132,9 @@ def __test():
     print isNameSeries("Smith, Jones, and Wiggins")
     print normalizePersonName("Morris, Thomas F.")
     print normalizePersonName("Dr. T. John Smith (editor)")
+    print normalizePersonName("Smith, John, Jr.")
+    print normalizePersonName("Smith, John Jr.")
+    print normalizePersonName("Smith, John Jr")
 
 if __name__ == '__main__':
      __test()
