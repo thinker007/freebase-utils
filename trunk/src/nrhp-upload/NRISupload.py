@@ -626,10 +626,11 @@ class FreebaseSession(HTTPMetawebSession):
         #log.debug([  '  Read query = ', query])
         try:
             response = self.mqlread(query)
-        except:
+        except MetawebError,e:
             # TODO - Is the retryable?  Wait and retry
             # if not retryable throw exception
-            log.error('**Freebase query MQL failed : ' + repr(query))
+            log.error('**Freebase query MQL failed : ' + repr(e) + repr(query))
+            # TODO how do we get the TID logged?
             return None
     #    log.debug([ '    Response = ',response])    
         return response
@@ -638,11 +639,12 @@ class FreebaseSession(HTTPMetawebSession):
         #log.debug(['  Write query = ', query])
         try:
             response = self.mqlwrite(query)
-        except:
+        except MetawebError,e:
             # TODO - Is the retryable?  Wait and retry
             # if not retryable throw exception
             # check for quota problems - /api/status/error/mql/access Too many writes
-            log.error('**Freebase write MQL failed : ' + repr(query))
+            log.error('**Freebase write MQL failed : ' + repr(e) + repr(query))
+            # TODO Will the above get the TID logged?  If not, how?
             return []
         #log.debug(['    Response = ',response])
         return response
