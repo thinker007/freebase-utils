@@ -32,10 +32,11 @@ class Stats(defaultdict):
             
     def dump(self):
         return "\n".join(["".join([category,":\n",self.dumpline(cdict)])
-                          for category,cdict in self.iteritems()])
+                          for category,cdict in iter(sorted(self.iteritems()))])
 
     def dumpline(self,cdict):
-        return "\n    ".join(["%20s :%5d" % (key,count) for key,count in cdict.iteritems()])
+        # TODO extend to sort by count (probably in reverse) rather than key
+        return "\n    ".join(["%20s :%5d" % (key,count) for key,count in iter(sorted(cdict.iteritems()))])
     
 def __test():
     s = Stats()
