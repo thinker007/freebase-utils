@@ -47,10 +47,12 @@ fetch = True # Fetch files from National Park Service (only published a few time
 # Inclusion criteria for states, significance, and resource type
 # Empty list [] matches everything
 incState = []
-incSignificance = ['IN','NA','ST']# ,'LO','NO'] # INternational, NAtional, STate, LOcal, NOt indicated
+incSignificance = ['IN','NA']#,'ST']# ,'LO','NO'] # INternational, NAtional, STate, LOcal, NOt indicated
 incResourceType = ['B','S','U','O','D'] # Building, Site, strUcture, Object, District,
 incRestricted = True # Include sites with restricted locations (usually archaelogical sites) 
 incNonNominated = True # include sites without special designation like National Historical Landmark
+
+createTopics = False # Create new Freebase topics for listings which can't be reconciled
 
 # Use the following parameter to restart a run in the middle if it was interrupted
 startingRecordNumber = 0
@@ -272,7 +274,7 @@ def addType(session, guids, types):
         response =session.fbWrite(query)
 
 def addAliases(session, guid, aliases):
-    if aliases:
+    if aliases and guid:
         # TODO Filter out low quality aliases
         query = {'guid': guid, 
                  '/common/topic/alias': [{'connect':'insert', 
@@ -806,12 +808,19 @@ def main():
             
             # Still don't have a match, punt...
             if not topicGuid:
-                # TODO queue potential new topics for human verification?
-                topicGuid = createTopic(session, name, [])
-                topicName = name
-                log.debug('No Freebase topic - created ' 
-                          + ' '.join([topicGuid, refNum, resourceType, state, str(significance), name, ' - ', category]))
-                stats.incr('TopicMatch','CreatedNew')
+                if createTopics:
+                    # TODO queue potential new topics for human verification?
+                    topicGuid = createTopic(session, name, [])
+                    topicName = name
+                    log.debug('No Freebase topic - created ' 
+                              + ' '.join([topicGuid, refNum, resourceType, state, str(significance), name, ' - ', category]))
+                    stats.incr('TopicMatch','CreatedNew')
+                else:
+                    log.debug('No Freebase topic found - skipping - ' 
+                              + ' '.join([refNum, resourceType, state, str(significance), name, ' - ', category]))
+                    stats.incr('TopicMatch','NotFound')
+                    continue
+                    
             
             aliases.append(name)
             if topicName in aliases:
@@ -841,10 +850,13 @@ def main():
             # currently we throw away any builders or engineers
             archIds = queryArchitect(session, lookup('ARCHTECD', refNum))
             archStyleIds = queryArchStyle(session, lookup('ARSTYLD', refNum))
-            
-            significantNames = [normalizePersonName(n) for n in lookup('SIGNAMED', refNum)]
-            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, True)
-            
+
+            # TODO Do this later when we have a human review queue set up
+#            significantNames = [normalizePersonName(n) for n in lookup('SIGNAMED', refNum)]
+#            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, True)            
+#            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, False)
+            significantPersonIds = []
+
             significantYears = uniquifyYears(lookup('SIGYEARD', refNum))
     
             culture = lookup('CULTAFFD', refNum)
