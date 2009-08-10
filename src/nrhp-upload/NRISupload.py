@@ -30,6 +30,7 @@ from dbfpy import dbf
 from freebase.api import HTTPMetawebSession, MetawebError
 
 import fbgeo
+from FreebaseSession import FreebaseSession
 from names import isNameSeries, normalizeName, normalizePersonName
 import NRISkml
 from simplestats import Stats
@@ -59,7 +60,7 @@ startingRecordNumber = 0
 
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger().setLevel(logging.WARN) # dial down freebase.api's chatty root logging
-log = logging.getLogger('NRISsync')
+log = logging.getLogger('NRISupload')
 log.setLevel(logging.DEBUG)
    
 baseUrl = 'http://www.nr.nps.gov/NRISDATA/'
@@ -622,38 +623,15 @@ def acre2sqkm(acre):
     # TODO double check to be sure this is 1/10s of an acre
     return fbgeo.acre2sqkm(float(acre) * 0.1)
 
-class FreebaseSession(HTTPMetawebSession):
-    
-    def fbRead(self, query):
-        #log.debug([  '  Read query = ', query])
-        try:
-            response = self.mqlread(query)
-        except MetawebError,e:
-            # TODO - Is the retryable?  Wait and retry
-            # if not retryable throw exception
-            log.error('**Freebase query MQL failed : ' + repr(e) + repr(query))
-            # TODO how do we get the TID logged?
-            return None
-    #    log.debug([ '    Response = ',response])    
-        return response
 
-    def fbWrite(self, query):
-        #log.debug(['  Write query = ', query])
-        try:
-            response = self.mqlwrite(query)
-        except MetawebError,e:
-            # TODO - Is the retryable?  Wait and retry
-            # if not retryable throw exception
-            # check for quota problems - /api/status/error/mql/access Too many writes
-            log.error('**Freebase write MQL failed : ' + repr(e) + repr(query))
-            # TODO Will the above get the TID logged?  If not, how?
-            return []
-        #log.debug(['    Response = ',response])
-        return response
             
 def main():
     
-    log.info('Selection criteria : States = ' + str(incState) + ', Significance = ' + str(incSignificance) + ', Types = ' + str(incResourceType))
+    log.info(''.join(['Selection criteria : States = ', str(incState),
+                       ', Significance = ',str(incSignificance),
+                       ', Types = ',str(incResourceType)]))
+    log.info('Create topics = ' + str(createTopics))
+    log.info('Starting record number = ' + str(startingRecordNumber))
     startTime = datetime.datetime.now()
     log.info('Starting at ' + startTime.isoformat())
     
@@ -699,7 +677,7 @@ def main():
 
     # Establish session
     session = FreebaseSession(freebaseHost, username, password)
-    session.login()
+	# Login is done implicitly when required
 
     # Query server for IDs of states, categories, and significance levels
     catGuids = queryNhrpCategoryGuids(session)
