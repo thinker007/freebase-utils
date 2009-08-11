@@ -46,10 +46,11 @@ class FreebaseSession(HTTPMetawebSession):
             msg = e.args[0]
             # Huge hack!  Why do we have to do string parsing to find an error code?
             if msg.find('/api/status/error/auth'):
-                self.log.warn('Authentication error on MQL write - attempting to login again')
+                self.log.warn('Authentication error on MQL write - attempting to login again' + repr(e))
                 self.login()
                 try:
                     response = self.mqlwrite(query)
+                    return response
                 except MetawebError, e2:
                     pass # nested exception - fall through to standard error handling
             self.log.error('**Freebase write MQL failed : ' + repr(e) + '\nQuery = ' + repr(query))
