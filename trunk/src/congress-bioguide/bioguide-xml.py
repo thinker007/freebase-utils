@@ -1,6 +1,12 @@
 '''
 Created on Mar 6, 2009
 
+This data loader works with the GovTrack.us data file people.xml containing
+all U.S. Congress people which can be fetched from
+
+  http://www.govtrack.us/data/us/<congress>/repstats/people.xml
+  e.g. http://www.govtrack.us/data/us/111/repstats/people.xml
+
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright: 2009 Thomas F. Morris
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
@@ -20,6 +26,7 @@ from freebase_person import FbPerson
 host = 'www.sandbox-freebase.com' # 'www.freebase.com'
 username = None #'tfmorris'
 #password = 'password'
+write = False
 
 desired_types = ['/people/person', 
                 '/people/deceased_person', 
@@ -35,7 +42,7 @@ class CongresspersonXmlHandler(ContentHandler):
         self.level = 0
         self.person_count = 0
         self.session = None
-        self.unique = self.zero = self.multiple = 0
+        self.unique = self.zero = self.multiple = self.id_match = 0
         self.current_count = 0
 
     def setSession(self,session):
@@ -57,7 +64,9 @@ class CongresspersonXmlHandler(ContentHandler):
             p._name_suffix = attrs['namemod']
         
         if 'title' in attrs:
-            p._title = attrs['title']
+            # Title is just "Rep." or "Sen." which adds no value to search - skip it
+#            p._title = attrs['title']
+            pass
         
         if 'birthday' in attrs:
             bdate = attrs['birthday']
@@ -89,9 +98,14 @@ class CongresspersonXmlHandler(ContentHandler):
             pass
         elif name == 'person':
             self.person_count += 1
-            self.person = self.parse_person(attrs)
-            self.id = attrs['bioguideid']
             self.current_listing = None
+            self.person = self.parse_person(attrs)
+            if 'bioguideid' in attrs:
+                self.id = attrs['bioguideid']
+            else:
+                print 'Skipping entry with no BioGuide ID' + attrs['name']
+                # person.xml now includes presidents with no Congressional bioguide ID
+                return
             # Resolve person against Freebase
             # write ID and other info to freebase
 #            print self.person_count, person._id, person.format_name_with_dates()
@@ -138,7 +152,8 @@ class CongresspersonXmlHandler(ContentHandler):
                 self.handle_person(self.session, self.person, self.id)
                 print self.current_listing, self.id, self.person.format_name_with_dates(), self.person._id
         elif name == 'people':
-            total = self.unique + self.zero + self.multiple
+            total = self.unique + self.zero + self.multiple + self.id_match
+            print 'ID matches: ', self.id_match, '%2.0f%% ' % (self.id_match * 100.0 / total)
             print 'Unique matches: ', self.unique, '%2.0f%% ' % (self.unique * 100.0 / total)
             print 'Unable to match: ',  self.zero, '%2.0f%% ' % (self.zero * 100.0 / total)
             print 'Multiple matches: ', self.multiple, '%2.0f%% ' % (self.multiple * 100.0 / total)
@@ -148,6 +163,7 @@ class CongresspersonXmlHandler(ContentHandler):
     def handle_person(self, session, person, thomas_id):
         result = self.query_thomas_id(session, thomas_id)
         if result:
+            self.id_match += 1
             id = person._id = result['id']
             # TODO add code to verify against XML file
 #            print 'Skipping ', id, person.format_name_with_dates()
@@ -187,6 +203,9 @@ class CongresspersonXmlHandler(ContentHandler):
             print '** Error on query', e, query    
     
     def write_thomas_id(self, session, person, thomas_id):
+        if not write:
+            return
+        
         types = ['/base/uspolitician/u_s_congressperson',
                  #'/base/uspolitician/topic', # For Freebase's kludgy base system
                 ]#,'/government/politician']
