@@ -192,7 +192,7 @@ class Person(object):
         if self._name_suffix and 'suffix' in options:
             result = result + ', ' + self._name_suffix
         if self._title and 'title' in options:
-            result = result + ' ' + self._title
+            result = self._title + ' ' + result
         return result.strip()
                  
     def format_full_name(self):
