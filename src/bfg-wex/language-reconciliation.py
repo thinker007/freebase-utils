@@ -79,8 +79,10 @@ def main ():
                     if i == 0:
                         query[0]['key'][0]['value'] = wpid
                         key = 'wpid'
+                        value = wpid
                     else:
                         key = 'iso'+str(i)
+                        value = code[key]
                         if not key in code:
                             continue
                         query[0]['iso_639_'+str(i)+'_code'] = code[key]
@@ -90,7 +92,7 @@ def main ():
                     for fbr in fbResult:
                         if not fbr.id in ids:
                             ids[fbr.id] = {}
-                        ids[fbr.id][key] = ''
+                        ids[fbr.id][key] = value
 
                 if len(ids) == 0:
                     # The following will fail for unicode names when run from the console (or debugger)
