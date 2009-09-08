@@ -27,7 +27,6 @@ import zipfile
 from math import cos, sqrt
 
 from dbfpy import dbf
-from freebase.api import HTTPMetawebSession, MetawebError
 
 import fbgeo
 from FreebaseSession import FreebaseSession
@@ -633,12 +632,11 @@ def main():
     log.info('Create topics = ' + str(createTopics))
     log.info('Starting record number = ' + str(startingRecordNumber))
     startTime = datetime.datetime.now()
-    log.info('Starting at ' + startTime.isoformat())
+    log.info('Starting on ' + host + ' at ' + startTime.isoformat())
     
     # Make temporary directory
     tempDir = tempfile.mkdtemp(suffix='dir', prefix='tempNRISdata') + '/'
 
-    # Fetch files (put in our working directory so they stay around)
     #fetch = isFetchNeeded()
     if fetch :
         for filename in filenames:
@@ -677,7 +675,7 @@ def main():
 
     # Establish session
     session = FreebaseSession(freebaseHost, username, password)
-	# Login is done implicitly when required
+    session.login()
 
     # Query server for IDs of states, categories, and significance levels
     catGuids = queryNhrpCategoryGuids(session)
