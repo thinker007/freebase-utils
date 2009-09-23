@@ -211,6 +211,8 @@ def uniquifyYears(seq):
     result = []
     for item in seq:
         yr = item[1]
+        if int(yr) > 2020:
+            yr = yr + " B.C.E"
         if yr and yr not in result:
             result.append(yr)
     result.sort()
