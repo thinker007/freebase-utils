@@ -344,19 +344,21 @@ def significance2guid(significance, significanceGuids):
             return significanceGuids[s]
 
 def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes, significanceGuid):
-    types = ['/protected_sites/listed_site', 
+    types = ['/location/location',
+             '/protected_sites/listed_site', 
              '/base/usnris/topic', 
-             '/base/usnris/nris_listing']
+             '/base/usnris/nris_listing',
+             ]
     if resourceType == 'B':
         types.append('/architecture/building')
         types.append('/architecture/structure')
         types.append('/location/location')
     elif resourceType == 'S':
-        types.append('/location/location')
+        pass
     elif resourceType == 'D':
-        types.append('/location/location')
+        pass
     elif resourceType == 'U':
-        types.append('/location/location')
+        pass
     # Some of these are boats, so we can't use structure
     #            types.append('/architecture/structure')
     # TODO What types?
@@ -632,7 +634,7 @@ def main():
     log.info('Create topics = ' + str(createTopics))
     log.info('Starting record number = ' + str(startingRecordNumber))
     startTime = datetime.datetime.now()
-    log.info('Starting on ' + host + ' at ' + startTime.isoformat())
+    log.info('Starting on ' + freebaseHost + ' at ' + startTime.isoformat())
     
     # Make temporary directory
     tempDir = tempfile.mkdtemp(suffix='dir', prefix='tempNRISdata') + '/'
@@ -853,21 +855,18 @@ def main():
                 query = addBuildingInfo(session, streetAddress, topicGuid, stateGuid, 
                                         cityTownGuid, archIds, archStyleIds)
     
-            if not resourceType == 'O':
-                if stateGuid:
-                    containerGuids = [stateGuid]
-                    if containedByGuid:
-                        containerGuids.append(containedByGuid)
-                    response = fbgeo.addContainedBy(session, topicGuid, containerGuids)
-    
-                    if area > 0:
-                        response = fbgeo.addArea(session, topicGuid, area)
-                    
-                    if refNum in coordinates:
-                        coords = coordinates[refNum][:2] # ignore elevation, it's always 0
-                        response = checkAddGeocode(session, topicGuid, coords)
-            else:
-                log.debug('Skipping location info for object type ' + ' '.join([resourceType, refNum, name]))
+            if stateGuid:
+                containerGuids = [stateGuid]
+                if containedByGuid:
+                    containerGuids.append(containedByGuid)
+                response = fbgeo.addContainedBy(session, topicGuid, containerGuids)
+
+                if area > 0:
+                    response = fbgeo.addArea(session, topicGuid, area)
+                
+                if refNum in coordinates:
+                    coords = coordinates[refNum][:2] # ignore elevation, it's always 0
+                    response = checkAddGeocode(session, topicGuid, coords)
     
             # Add Listed Site info
             # TODO: Check for existing entry that we can update with more specific date, category, etc
