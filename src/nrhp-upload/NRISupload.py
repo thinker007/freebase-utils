@@ -859,7 +859,7 @@ def main():
     
             if stateGuid:
                 containerGuids = [stateGuid]
-                if containedByGuid:
+                if containedByGuid and containedByGuid != stateGuid:
                     containerGuids.append(containedByGuid)
                 response = fbgeo.addContainedBy(session, topicGuid, containerGuids)
 
