@@ -24,13 +24,12 @@ def fetchTopic(fbsession, wpid):
               }]
     topic = fbsession.mqlread(query)
     if topic:
-        name = ''
-        id = topic[0].id
-        if id[:5] == '/guid':
-            name = topic[0].name
-            if not name:
-                name = ''
-        print 'WP disambiguation page on Freebase : id = ' + topic[0].id + '\t' + name
+        t = topic[0]
+        name = t.name
+        if not name:
+            name = ''
+        id = t.id
+        print '\t'.join([topic[0].id,name,','.join(t.type)])
     return topic
 
                 
@@ -44,7 +43,7 @@ def wpHndisPages(bfgSession, limit):
 
     # Now handle those which are included in the category indirectly through
     # the use of a {hndis} template call
-    for wpid in bfg_wputil.templatePages(bfgSession, 'Hndis', limit):
+    for wpid,scratch in bfg_wputil.templatePages(bfgSession, 'Hndis', limit):
         yield wpid
 
                 
@@ -53,7 +52,7 @@ def main ():
     logging.getLogger().setLevel(logging.WARN) # dial down freebase.api's chatty root logging
     log = logging.getLogger('language-recon')
     log.setLevel(logging.DEBUG)
-    log.info("Beginning at %s" % str(datetime.now()))
+    log.info("Beginning scan for Wikipedia disambiguation pages on Freebase at %s" % str(datetime.now()))
 
     bfgSession = BfgSession()
     fbSession = HTTPMetawebSession('http://www.freebase.com')
