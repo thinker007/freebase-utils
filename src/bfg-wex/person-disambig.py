@@ -8,10 +8,46 @@ against Freebase Person topics.
 '''
 
 from bfg_session import BfgSession
+import bfg_wputil
 from freebase.api import HTTPMetawebSession
 from datetime import datetime
 import logging
 
+def fetchTopic(fbsession, wpid):
+    query = [{'id': None,
+              'name': None,
+              'type': [],
+              'key': [{
+                       'namespace': '/wikipedia/en_id',
+                       'value':     wpid
+                       }]
+              }]
+    topic = fbsession.mqlread(query)
+    if topic:
+        name = ''
+        id = topic[0].id
+        if id[:5] == '/guid':
+            name = topic[0].name
+            if not name:
+                name = ''
+        print 'WP disambiguation page on Freebase : id = ' + topic[0].id + '\t' + name
+    return topic
+
+                
+def wpHndisPages(bfgSession, limit):
+    ''' A generator that yields all the Wikipedia name disambiguation pages
+    however they might be coded'''
+
+    # First do the simple case - articles placed in the category directly
+    for wpid in bfg_wputil.categoryPages(bfgSession, 'Human name disambiguation pages', limit):
+        yield wpid
+
+    # Now handle those which are included in the category indirectly through
+    # the use of a {hndis} template call
+    for wpid in bfg_wputil.templatePages(bfgSession, 'Hndis', limit):
+        yield wpid
+
+                
 def main ():
     logging.basicConfig(level=logging.DEBUG)
     logging.getLogger().setLevel(logging.WARN) # dial down freebase.api's chatty root logging
@@ -21,49 +57,14 @@ def main ():
 
     bfgSession = BfgSession()
     fbSession = HTTPMetawebSession('http://www.freebase.com')
-    # Get a list of template calls to the Language Infobox template
-    query = {'path':'wex-index',
-             'sub': '',
-             'pred':'', #
-             'obj':'Category:Human name disambiguation pages',
-             'limit': 26000
-             }
-    result = bfgSession.query(query)
-    log.info('Number of pages in Category:Human name disambiguation pages on wikipedia  = ' + str(len(result)))
-
-    for r in result:
-        if r.s.startswith('wexen:wpid/'):
-            wpid = r.s[len('wexen:wpid/'):]
-            # print wpid
-
-    query = {'path':'wex-index',
-             'sub': '',
-             'pred':'', #
-             'obj':'Template:Hndis',
-             'limit': 26000
-             }
-    result = bfgSession.query(query)
-    log.info('Number of pages in with Template:Hndis = ' + str(len(result)))
-
-    for r in result:
-        subject = r.s
-        # Find inbound subject of which this is the object 
-        # (ie template call section in main article which is calling template) 
-        result = bfgSession.query({'path':'wex-index',
-                                'pred' : 'wex:a/template_call',
-                                'obj': subject})
-        if len(result) == 1:
-            r = result[0]
-            if r.s.startswith('wexen:wpid/'):
-                wpid = r.s[len('wexen:wpid/'):]
-                #print wpid
-            else:
-                log.warn("Found subject which is not WPID - %s", r.s)
-        else:
-            log.warn("Found more than one result - %s", repr(r))
-                
+    
+    pages = wpHndisPages(bfgSession, 30000)
+    for wpid in pages:
+        topic = fetchTopic(fbSession, wpid)
+ 
     log.info("Done at %s" % str(datetime.now()))
 
     
 if __name__ == '__main__':
     main()
+
