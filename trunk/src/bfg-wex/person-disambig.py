@@ -30,6 +30,12 @@ def main ():
              }
     result = bfgSession.query(query)
     log.info('Number of pages in Category:Human name disambiguation pages on wikipedia  = ' + str(len(result)))
+
+    for r in result:
+        if r.s.startswith('wexen:wpid/'):
+            wpid = r.s[len('wexen:wpid/'):]
+            # print wpid
+
     query = {'path':'wex-index',
              'sub': '',
              'pred':'', #
@@ -38,6 +44,24 @@ def main ():
              }
     result = bfgSession.query(query)
     log.info('Number of pages in with Template:Hndis = ' + str(len(result)))
+
+    for r in result:
+        subject = r.s
+        # Find inbound subject of which this is the object 
+        # (ie template call section in main article which is calling template) 
+        result = bfgSession.query({'path':'wex-index',
+                                'pred' : 'wex:a/template_call',
+                                'obj': subject})
+        if len(result) == 1:
+            r = result[0]
+            if r.s.startswith('wexen:wpid/'):
+                wpid = r.s[len('wexen:wpid/'):]
+                #print wpid
+            else:
+                log.warn("Found subject which is not WPID - %s", r.s)
+        else:
+            log.warn("Found more than one result - %s", repr(r))
+                
     log.info("Done at %s" % str(datetime.now()))
 
     
