@@ -119,8 +119,15 @@ class BfgSession(object):
         self.log = logging.getLogger()
         self.service_url = service_url
         self._http_request = http_client(None, self._raise_service_error)
-                
+
+    
+    def treequery(self, query):
+        return self._query('/bfg/treequery', query)
+    
     def query(self, query):
+        return self._query('/bfg/query', query)
+    
+    def _query(self, service, query):
         """Query the Big F*ing graph.  The single argument is a dictionary
         containing query parameters which will be converted to HTTP form
         parameters and submitted.
@@ -135,11 +142,13 @@ class BfgSession(object):
         subq = dict(query=query, escape=False)
 #        qstr = '&'.join(['%s=%s' % (urlencode_weak(unicode(k)), urlencode_weak(unicode(v)))
 #                             for k,v in query.items()])  
-        r = self._httpreq_json('/bfg/query', form=query)
+        r = self._httpreq_json(service, form=query)
         
         return self._result(r)
         pass
-    
+
+
+        
     def _httpreq(self, service_path, method='GET', body=None, form=None,
                  headers=None):
         """
