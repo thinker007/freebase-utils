@@ -34,6 +34,9 @@ def templatePages(bfgSession, template, limit):
              }
     result = bfgSession.treequery(query)
     
+    if not result:
+        result = []
+        
     total = len(result['!wex:tc/template'])
     log.info('Number of pages in with Template:%s = %d', template, total)
 
