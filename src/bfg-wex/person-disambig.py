@@ -46,6 +46,9 @@ def wpHndisPages(bfgSession, limit):
     for wpid,scratch in bfg_wputil.templatePages(bfgSession, 'Hndis', limit):
         yield wpid
 
+    # Ditto for Hndis pages needing cleanup
+    for wpid,scratch in bfg_wputil.templatePages(bfgSession, 'Hndis-cleanup', limit):
+        yield wpid
                 
 def main ():
     logging.basicConfig(level=logging.DEBUG)
