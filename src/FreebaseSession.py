@@ -6,9 +6,36 @@ Created on Aug 8, 2009
 @copyright: 2009 Thomas F. Morris
 '''
 
+import logging
+from optparse import OptionParser
+import getpass
+
 from freebase.api import HTTPMetawebSession, MetawebError
 
-import logging
+
+def getSessionFromArgs():
+    '''Convenience method to create a Freebase session using the username, 
+    password, and host in the command line arguments.
+    Session is NOT logged in on return.'''
+    
+    log = logging.getLogger('FreebaseSession')
+    parser = OptionParser()
+    parser.add_option("-u", "--user", dest="user", help="Freebase username", default='tfmorris')
+    parser.add_option("-p", "--password", dest="pw", help="Freebase password")
+    parser.add_option("-s", "--host", dest="host", help="service host", default = 'www.sandbox-freebase.com')
+   
+    (options, args) = parser.parse_args()
+
+    user = options.user
+    pw = options.pw
+    host = options.host
+    
+    # TODO not sure this is a good idea...
+#    if not pw:
+#        pw = getpass.getpass()
+
+    log.info( 'Host: %s, User: %s' % (host, user))
+    return HTTPMetawebSession(host, username=user, password=pw)
 
 class FreebaseSession(HTTPMetawebSession):
     '''
