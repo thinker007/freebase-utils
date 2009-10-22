@@ -10,9 +10,12 @@ Created on October 3, 2009
 
 import FreebaseSession
 
+write = False
+
 def main():
     session = FreebaseSession.getSessionFromArgs();
-    session.login()
+    if write:
+        session.login()
     query = {
              "type":     "/location/location",
              "containedby": [{
@@ -38,22 +41,27 @@ def main():
         dept_name = depts[0].name
         name = r.name[0].value
         if not name.endswith(dept_name): # and not name.endswith(' France'):
-            print 'Skipping '+name + ' ' + dept_name
+            print '\t'.join([r.id, name, 'Skipped - doesnt end with ' + dept_name])
             skips +=1
         else:
             name = name.split(', '+dept_name)[0]
             if not name:
-                print 'Bad split name : ' + name
-            q = {"id":r.id,
-                 "name" : {"value" : name,
-                           "lang" : "/lang/en",
-                           "type" : "/type/text",
-                           "connect" : "update"}
-                 }
-            status = session.mqlwrite(q)
-            if (status.name.connect != 'updated'):
-                print 'Update failed ' + r.id + name + repr(status)
-            changes += 1
+                print '\t'.join([r.id, name, 'Bad split name'])
+            else:
+                q = {"id":r.id,
+                     "name" : {"value" : name,
+                               "lang" : "/lang/en",
+                               "type" : "/type/text",
+                               "connect" : "update"}
+                     }
+                if write:
+                    status = session.mqlwrite(q)
+                    if (status.name.connect != 'updated'):
+                        print '\t'.join([r.id, name, 'Update Failed: ' + repr(status)])
+                    else:
+                        print '\t'.join([r.id, name, status.name.connect])
+    
+                changes += 1
     
     print ' '.join(('Changes: ',str(changes), 'Skips:', str(skips)))
     
