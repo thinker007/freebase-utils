@@ -8,11 +8,10 @@ Created on October 3, 2009
 @author: Tom Morris
 '''
 
-from freebase.api import HTTPMetawebSession, MetawebError
+import FreebaseSession
 
 def main():
-    session = HTTPMetawebSession('www.sandbox-freebase.com',
-                                 username='tfmorris',password='password')
+    session = FreebaseSession.getSessionFromArgs();
     session.login()
     query = {
              "type":     "/location/location",
