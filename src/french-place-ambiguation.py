@@ -1,7 +1,14 @@
 '''
-Find all locations contained in French departments which which have the
-department name appended to the commune name and fix the names to match
+Find all locations contained in French departements which which have the
+departement name appended to the commune name and fix the names to match
 the Freebase.com naming standards.
+
+Freebase's convention is to store disambiguating information in structured
+information, rather than as part of the name like Wikipedia does.
+
+Although we can construct an MQL query which gets us all the candidates,
+doing the final comparison and stripping of the departement name suffix
+requires a little Python.
 
 Created on October 3, 2009
 
