@@ -1,19 +1,22 @@
 '''
 Created on Aug 3, 2009
 
-@author: tom.morris
+@author: Tom Morris <tfmorris@gmail.com>
 '''
 
 from freebase.api import HTTPMetawebSession, MetawebError
 
 def main():
     session = HTTPMetawebSession('www.freebase.com')
+    since = "2009-10-01"
     query = [{"type":"/pipeline/merge_task",
               "timestamp":None,
+              "t:timestamp>":since,
               "sort":"-timestamp",
               'id':None,
               "right_guid":None,
               "left_guid":None,
+              "/pipeline/task/status":None,
               "limit":7000
               }]
     response = session.mqlread(query)
@@ -31,9 +34,11 @@ def main():
 
     query = [{"type":"/pipeline/delete_task",
               "timestamp":None,
+              "t:timestamp>" : since,
               "sort":"-timestamp",
               'id':None,
               "delete_guid":None,
+              "/pipeline/task/status":None,
               "limit":9000
               }]
     response = session.mqlread(query)
