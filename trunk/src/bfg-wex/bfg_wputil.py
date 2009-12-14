@@ -13,7 +13,7 @@ import logging
 
 log = logging.getLogger('bfg-wputil')
 
-def templatePages(bfgSession, template, limit):
+def templatePages(bfgSession, template, limit, subquery={'!wex:a/template_call':None}):
     '''Generator which yields tuples containing the Wikipedia page IDs
     of all pages using this template. As well as the WEX template call
     block which invokes the template.
@@ -28,7 +28,7 @@ def templatePages(bfgSession, template, limit):
     '''
     query = {'path':'wex-index',
              'query' : {'id':'Template:'+template,
-                        '!wex:tc/template': {'!wex:a/template_call':None}
+                        '!wex:tc/template': subquery
                         },
              'limit': limit
              }
@@ -45,7 +45,7 @@ def templatePages(bfgSession, template, limit):
         templateCall = r.id
         if wpid.startswith('wexen:wpid/'):
             wpid = wpid[len('wexen:wpid/'):]
-            yield wpid,templateCall
+            yield wpid,r
         else:
             log.warn("Found subject which is not WPID - %s", wpid)
     
