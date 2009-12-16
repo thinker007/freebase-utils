@@ -1,5 +1,10 @@
 # coding: utf-8
 '''
+Class to encapsulate handling of attributes associated with a person such
+as name(s), birth & death dates, etc.
+
+Includes code to attempt to parse a name into its component pieces.
+
 Created on Mar 7, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
@@ -113,7 +118,7 @@ class Person(object):
                 # could be last, first or first last, Jr.
                 if commas[1].find('.') > 0:
                     self._name_suffix = commas[1].strip()
-                    name_string = commas[1]
+                    name_string = commas[0]
                 else:
                     self._family_name = commas[0]
                     self._given_names = commas[1]
