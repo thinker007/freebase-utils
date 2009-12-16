@@ -13,7 +13,6 @@ import logging
 from math import sqrt
 
 from freebase.api import HTTPMetawebSession, MetawebError
-from metaweb import search
 
 from person import Person
 
@@ -222,13 +221,13 @@ class FbPerson(Person):
         if self._birth_date:
             dob = self._birth_date
         search_string = (self.format_full_name() + " " + dob).encode('utf8')
-        search_results = search(search_string, types)
+        search_results = session.search(search_string, type=types)
         search_score, search_id, search_name = self.score_search(search_results)
         if not search_id:
             # Search only indexes anchor text, so if birth year wasn't in an
             # anchor, it can cause search to return no results - try again with it
             search_string = self.format_full_name().encode('utf8')
-            search_results = search(search_string, types)
+            search_results = session.search(search_string, type=types)
             search_score, search_id, search_name = self.score_search(search_results)            
 
         all_names = self.format_all_names()
