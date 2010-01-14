@@ -86,7 +86,9 @@ def templatePagesOld(bfgSession, template, limit):
             r = result2[0]
             if r.s.startswith('wexen:wpid/'):
                 wpid = r.s[len('wexen:wpid/'):]
-                yield wpid,templateCall
+                result3 = bfgSession.query({'path':'wex-index',
+                           'sub': templateCall})
+                yield wpid,result3
             else:
                 log.warn("Found subject which is not WPID - %s", r.s)
         else:
