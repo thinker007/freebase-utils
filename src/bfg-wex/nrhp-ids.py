@@ -66,6 +66,7 @@ def main ():
     pages = wpTemplateQuery(bfgSession, 'Infobox nrhp', 100000)
     for wpid,result in pages:
         serial+=1
+        nrisid=None
         for r in result:
             if 'param' in r and r['param'] == 'refnum':
                 try:
@@ -89,8 +90,8 @@ def main ():
 
     log.info('Number of results = %d' % len(idmap))
             
-    for wpid in idmap:
-        topic = fetchTopic(fbSession, wpid, idmap[wpid])
+#    for wpid in idmap:
+#        topic = fetchTopic(fbSession, wpid, idmap[wpid])
  
     log.info("Done at %s" % str(datetime.now()))
 
