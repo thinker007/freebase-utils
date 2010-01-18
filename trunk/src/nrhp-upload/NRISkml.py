@@ -67,26 +67,23 @@ class KmlHandler(ContentHandler):
             # TODO use RE
             pieces = self.buffer.split('NPS Reference Number: </b>')
             if len(pieces) > 1:
-                refNum = pieces[1].split('<')[0]
-#                print '#', self.count, refNum, 
-                self.refNum = refNum
+                self.refNum = pieces[1].split('<')[0]
                 self.count += 1
         elif name == 'name': # Placemark/name
             self.name = self.buffer
             self.buffer = ''            
         elif name == 'coordinates': # Placemark/Point/coordinates
-            # Triple lat, long, elev   -64.9974736069999,18.3551051620001,0
+            # Triple long, lat, elev   -64.9974736069999,18.3551051620001,0
             coords = self.buffer.split(',')
-            # !CAREFUL! - KML is backwards from everywhere else and does long,lat instead of lat/long
             long = float(coords[0])
             lat = float(coords[1])
             if len(coords) > 2:
                 elev = float(coords[2])
                 # TODO this is order dependent and assumes that the description
                 # element comes before the Point element - true currently, but not guaranteed
-                self.coordinates = [lat, long, elev]
+                self.coordinates = [long, lat, elev]
             else:
-                self.coordinates = [lat, long, None]
+                self.coordinates = [long, lat, None]
 #            print " Lat = ", lat, " long = ", long, " elev = ", elev
         self.buffer = ''
         
