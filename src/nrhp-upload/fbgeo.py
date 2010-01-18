@@ -12,7 +12,8 @@ TODO add name transformations for things like Mt., St., etc.
 
 import logging
 from math import cos, sqrt
-#from freebase.api import HTTPMetawebSession, MetawebError
+
+from pyproj import Proj, transform
 
 _log = logging.getLogger('fbgeo')
 _usStates = {}
@@ -20,13 +21,13 @@ _usStates = {}
 def approximateDistance(a, b):
     '''Compute approximate local flat earth distance between two points represented by lat/long tuples'''
     milePerDegree = 60 * 1.15 # 1 nm/minute, 1 1/7 mile/nm - VERY APPROXIMATE!
-    ydist = abs(a[0] - b[0]) * milePerDegree
-    xdist = abs(a[1] - b[1]) * cos(abs(a[0]/180.0)) * milePerDegree
+    xdist = abs(a[0] - b[0]) * cos(abs(a[1]/180.0)) * milePerDegree
+    ydist = abs(a[1] - b[1]) * milePerDegree
     dist = sqrt(xdist ** 2 + ydist ** 2)
     return dist
 
-def swappedLatLong(a, b):
-    '''Check for swapped lat/long coordinate pairs '''
+def isSwapped(a, b):
+    '''Check for swapped long/lat coordinate pairs '''
     epsilon = .001
     if abs(a[0] - b[1]) < epsilon and abs(a[1] - b[0]) < epsilon:
         return True
@@ -38,7 +39,7 @@ def acre2sqkm(acre):
 ## TODO split into geo and fbgeo ??
 
 def parseGeocode(geocode):
-    '''Parse a Freebase Geocode object into a lat, long [, elev] tuple'''
+    '''Parse a Freebase Geocode object into a long, lat [, elev] tuple'''
 
     lat = geocode['latitude']
     long = geocode['longitude']
@@ -51,9 +52,9 @@ def parseGeocode(geocode):
 
     # Elevation is optional
     if elev == None:
-        return [float(lat), float(long)]
+        return [float(long), float(lat)]
     else:
-        return [float(lat), float(long), float(elev)] 
+        return [float(long), float(lat), float(elev)] 
 
 
 def queryUsStateGuids(session):
@@ -165,8 +166,8 @@ def queryGeoLocation(session, guid):
     geoId = results['geolocation']['id']
     query = {'id' : geoId,
              'guid' : None,
-               'latitude' : None,
                'longitude' : None,
+               'latitude' : None,
                'elevation' : None,
                'type' : '/location/geocode'
                }
@@ -177,8 +178,8 @@ def addGeocode(session, topicGuid, coords):
              'type': '/location/location', 
              'geolocation': {'create': 'unless_connected', 
                              'type': '/location/geocode', 
-                             'latitude': coords[0], 
-                             'longitude': coords[1]
+                             'longitude': coords[0],
+                             'latitude': coords[1]
                              }
              }
     if len(coords) > 2:
@@ -190,8 +191,8 @@ def updateGeocode(session, geocodeGuid, coords):
     '''Change the coordinates of an existing geocode'''
     query = {'guid': geocodeGuid, 
              'type': '/location/geocode', 
-             'latitude': {'connect' : 'update', 'value' : coords[0]}, 
-             'longitude': {'connect' : 'update', 'value' : coords[1]}
+             'longitude': {'connect' : 'update', 'value' : coords[0]},
+             'latitude': {'connect' : 'update', 'value' : coords[1]}
              }
     if len(coords) > 2:
         query['elevation'] = {'connect' : 'update', 'value' : coords[2]}
@@ -211,4 +212,14 @@ def addContainedBy(session, topicGuid, containerGuids):
              'containedby' : [{'connect' : 'insert', 'guid' : g} for g in containerGuids]
              }
     return session.fbWrite(query)
-                
+
+def utm2lonlat(zone,east,north):
+    '''Convert UTM NAD27 to long/lat'''
+    # TODO make this fromUTM() making canonical internal proj/datum implicit?
+    p1 = Proj(proj='utm',zone=zone,ellps='clrk66') #NAD27 uses the Clark 1866 ellipsoid
+    # Google Maps & MS Live uses Mercator projection - "Web Mercator" == EPSG:3785 
+    x1,y1=p1(east,north,inverse=True)
+#    p2 = Proj(init='epsg:3785')
+#    x,y=transform(p1,p2,x1,y1)
+    return x1,y1
+    
