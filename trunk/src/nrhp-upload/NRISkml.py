@@ -9,11 +9,12 @@ Created on Feb 27, 2009
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
-import zipfile
 
 from datetime import datetime
+import re
 from xml.sax import parseString
 from xml.sax.handler import ContentHandler
+import zipfile
 
 kmzFiles = ['NRHP - Midwest Region.kmz',
             'NRHP - Northeast Region.kmz',
@@ -22,13 +23,19 @@ kmzFiles = ['NRHP - Midwest Region.kmz',
             'NRHP - West Region.kmz'
             ]
 
+
 class KmlHandler(ContentHandler):
     '''Parse a KML file for the National Park Service National Register of Historic Places'''
+
+    #geocodeRE = re.compile('Geocode Match: </b>([0|1])')
+    #refnumRE = re.compile('NPS Reference Number: </b>([0-9]{8})')
+    RE = re.compile('.*?(?s)NPS Reference Number:\\s*</b>(\\d{8}).*?(?:Geocode Match: </b>([0-1])).*?',re.DOTALL)
     
     def __init__(self):
         self.level = 0
         self.buffer = ''
         self.count = 0
+        self.geocodedCount = 0
         self.points = {}
         self.refNum = ''
         self.name = ''
@@ -64,11 +71,14 @@ class KmlHandler(ContentHandler):
             pass
         elif name == 'description': # Placemark/description
             # <b>NPS Reference Number: </b>88000612<br />
-            # TODO use RE
-            pieces = self.buffer.split('NPS Reference Number: </b>')
-            if len(pieces) > 1:
-                self.refNum = pieces[1].split('<')[0]
-                self.count += 1
+            # <b>Geocode Match: </b>1<br />
+            match = self.RE.match(self.buffer)
+            if match:
+                self.refNum = match.group(1)
+                geocode = match.group(2)
+                self.count+=1
+                if geocode == '1':
+                    self.geocodedCount += 1
         elif name == 'name': # Placemark/name
             self.name = self.buffer
             self.buffer = ''            
@@ -100,7 +110,8 @@ def parse(file, coordinates):
         kmlFile = zipfile.ZipFile(file, 'r')
         entries = kmlFile.filelist
         parseString(kmlFile.read(entries[0].filename), handler)
-        
+
+    print "Loaded %d coordinate pairs (%d geocoded)." % (handler.count, handler.geocodedCount)
     return handler.coordinates
 
 def parseFiles(files = kmzFiles):
@@ -112,5 +123,5 @@ def parseFiles(files = kmzFiles):
 if __name__ == '__main__':
    startTime = datetime.now()
    results = parseFiles()
-   print "Loaded ", len(results), " entries in ", str((datetime.now() - startTime))
+   print "Loaded %d (%d geocoded) entries in %t" % (len(results), self.geocodedCount,(datetime.now() - startTime))
 #   print results
