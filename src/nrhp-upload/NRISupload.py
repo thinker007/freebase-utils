@@ -4,43 +4,39 @@ into Freebase.
 
 @requires: dbf from http://dbfpy.sourceforge.net/  
 @requires: freebase-api from http://freebase-api.code.google.com
+@requires: mdbtools 
 
 @author: Tom Morris <tfmorris@gmail.com>
-@copyright: 2009 Thomas F. Morris
+@copyright: 2009,2010 Thomas F. Morris
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 '''
 
 from __future__ import with_statement
 
+import csv
 import datetime
+from fileinput import FileInput
 import logging
 import logging.handlers
 import os
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 import urllib
 import urllib2
 import zipfile
 
-from math import cos, sqrt
-
 from dbfpy import dbf
 
 import fbgeo
-from FreebaseSession import FreebaseSession
+import FreebaseSession
 from names import isNameSeries, normalizeName, normalizePersonName
 import NRISkml
 from simplestats import Stats
-import wikipedia
-
 
 ### Initialization of globals (ick!)
-# TODO configuration parameters should all be command line parameters
-freebaseHost = 'www.sandbox-freebase.com' # 'www.sandbox-freebase.com' for testing, 'www.freebase.com' for production work
-username = 'tfmorris' # set to a valid account for writing
-password = 'password'
 
 fetch = True # Fetch files from National Park Service (only published a few times a year)
 
@@ -102,11 +98,6 @@ lookupTables = ['CERTM',    # Certification Status LI = Listed, etc
 #                'OTHDOCM',
                 ] #, 'OSTATED']
 # lookupTables = ['COUNTYD'] # short list for quicker debugging runs
-
-
-wikiRE = [re.compile('.ational\s*.egister\s*.f\s*.istoric\s*.laces'),
-          re.compile('.ational\s*.onument'),
-          re.compile('.ational\s*.emorial')]
 
 stats = Stats()
 tables = dict() # Global set of database tables we've read
@@ -211,8 +202,8 @@ def uniquifyYears(seq):
     result = []
     for item in seq:
         yr = item[1]
-        if int(yr) > 2020:
-            yr = yr + " B.C.E"
+        if yr and int(yr) > 2020:
+            yr = yr + " B.C.E."
         if yr and yr not in result:
             result.append(yr)
     result.sort()
@@ -282,7 +273,7 @@ def addAliases(session, guid, aliases):
                  '/common/topic/alias': [{'connect':'insert', 
                                           'lang': '/lang/en',
                                           'type': '/type/text',
-                                          'value':a} for a in aliases]
+                                          'value':a} for a in set(aliases)]
                  }
         log.debug('Adding aliases ' + repr(aliases) + ' to ' + guid)
         return session.fbWrite(query)
@@ -299,7 +290,7 @@ def addNrisListing(session, guids, listing):
 
 def checkAddGeocode(session, topicGuid, coords):
     '''
-    Add geocode to topic if needed.  It will warn if lat/lon appear swapped,
+    Add geocode to topic if needed.  It will warn if long/lat appear swapped,
     but *not* fix it.  It also doesn't update the geocode if it's within
     an epsilon (currently 0.1 nm) of the current location.
     '''
@@ -310,9 +301,9 @@ def checkAddGeocode(session, topicGuid, coords):
         response = None
         location = fbgeo.parseGeocode(geocode)
         if location:
-            if fbgeo.swappedLatLong(location, coords):
-                print '*** Lat/long appear swapped ', geocode, coords
-            #   print '*** Swapping geocode lat/long', geocode, coords
+            if fbgeo.isSwapped(location, coords):
+                print '*** Long/lat appear swapped ', geocode, coords
+            #   print '*** Swapping geocode long/lat', geocode, coords
             #   response = fbgeo.updateGeocode(session, geocode['guid'], coords[:2])
             else:
                 distance = fbgeo.approximateDistance(location, coords)
@@ -354,7 +345,6 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
     if resourceType == 'B':
         types.append('/architecture/building')
         types.append('/architecture/structure')
-        types.append('/location/location')
     elif resourceType == 'S':
         pass
     elif resourceType == 'D':
@@ -402,10 +392,10 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
         query['address'] = addressSubQuery
         
     if archIds:
-        query['architect'] = [{'connect': 'insert', 'guid': i} for i in archIds]
+        query['architect'] = [{'connect': 'insert', 'guid': i} for i in set(archIds)]
         stats.incr('Wrote', 'Architect')
     if archStyleIds:
-        query['architectural_style'] = [{'connect': 'insert', 'guid': i} for i in archStyleIds]
+        query['architectural_style'] = [{'connect': 'insert', 'guid': i} for i in set(archStyleIds)]
         stats.incr('Wrote', 'ArchStyle')    
     return session.fbWrite(query)
 
@@ -413,15 +403,15 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
 def addMisc(session, topicGuid, significantPersonIds, significantYears, culture):
     query = {}
     if significantYears:
-        query['/base/usnris/nris_listing/significant_year'] = [{'connect': 'insert', 'value': y} for y in significantYears]
+        query['/base/usnris/nris_listing/significant_year'] = [{'connect': 'insert', 'value': y} for y in sorted(list(set(significantYears)))]
     
     if significantPersonIds:
         addNrisListing(session, significantPersonIds, topicGuid)
-        query['/base/usnris/nris_listing/significant_person'] = [{'connect': 'insert', 'guid': guid} for guid in significantPersonIds]
+        query['/base/usnris/nris_listing/significant_person'] = [{'connect': 'insert', 'guid': guid} for guid in set(significantPersonIds)]
     # TODO add /base/usnris/significant_person type to person objects
     
     if culture:
-        query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect': 'insert', 'lang': '/lang/en', 'value': c} for c in culture]
+        query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect': 'insert', 'lang': '/lang/en', 'value': c} for c in set(culture)]
     # TODO: Try to match free form text to a /people/ethnicity topic
     
     if query:
@@ -432,7 +422,7 @@ def createTopic(session, name, types):
     common = "/common/topic"
     if not common in types: # make sure it's a topic too
         types.append(common)
-    query = {'create': 'unconditional', # make sure you're checked to be sure it's not a duplicate
+    query = {'create': 'unconditional', # make sure you've checked to be sure it's not a duplicate
              'type': types,
              'name' : name,
              'guid' : None
@@ -445,32 +435,35 @@ def createPerson(session, name):
     # Might not be a good idea to assume they're all deceased, but it's a *historic* database
     return createTopic(session, name, ["/people/person","/people/deceased_person"])
 
-def queryNrisTopic(session, refNum):
+def queryNrisTopic(session, refNum, wpid):
     '''Query server for a unique topic indexed by our NRIS reference number'''
     query = [{'guid' : None,
                'id' : None,
                'name' : None,
                '/base/usnris/nris_listing/item_number' : refNum,
-               'type' : '/protected_sites/listed_site'
+               'key':{'namespace':'/wikipedia/en_id','value':None,'optional':True},
                }]
     results = session.fbRead(query)
     if results:
         if len(results) == 1:
-            return results[0]['guid'],results[0]['name']
+            if wpid and results[0]['key'] and results[0]['key']['value'] != wpid:
+                log.error('Mismatch between NRIS refnum %s and Wikipedia key %s' % (refNum, wpid))
+                return None,None
+            else:
+                return results[0]['guid'],results[0]['name']
         elif len(results) > 1:
             log.error('multiple topics with the same NHRIS reference number ' + refNum) 
     return None, None
 
-def queryTopic(session, refNum, name, aliases, exactOnly):
+def queryTopic(session, refNum, wpid, name, aliases, exactOnly):
     # Look up by Ref # enumeration first
-    topicGuid,topicName = queryNrisTopic(session, refNum)
+    topicGuid,topicName = queryNrisTopic(session, refNum, wpid)
 
     if not topicGuid:
         results = queryName(session, name)
         incrMatchStats(results)
         
         wpids = extractWpids(results)
-        wpid = wikipedia.queryArticle(wpids, refNum, wikiRE, exactOnly)
         item = wpid2Item(results, wpid)
 #            if result == None:
 #                log.debug( 'no Wikipedia match found ' + refNum + ' ' + repr(name))
@@ -482,7 +475,6 @@ def queryTopic(session, refNum, name, aliases, exactOnly):
             for n in aliases:
                 results = queryName(session, n)
                 wpids = extractWpids(results)
-                wpid = wikipedia.queryArticle(wpids, refNum, wikiRE, exactOnly)
                 item = wpid2Item(results, wpid)
                 if item:
                     log.info('**Resolved using alias ' + n + ' for name ' + name)
@@ -540,6 +532,48 @@ def unzipFiles(files, tempDir):
         zfile.close()
     log.debug('Unzip complete')
 
+def loadGeo(file,coordinates):
+    reader = csv.reader(FileInput(file))
+    reader.next() # get rid of header row
+    count = 0
+    total = 0
+    for r in reader:
+        total += 1
+        id,zone,easting,northing = r
+        if not id in coordinates: # give preference to KMZ file coordinates
+            try:
+                coordinates[id]=fbgeo.utm2lonlat(zone,easting,northing)
+                count += 1
+            except:
+                log.warn('failed to convert coordinates %s, %s, %s for id %s' % (zone,easting,northing,id))
+                count -= 1
+    print 'Loaded %d of %d coordinate pairs' % (count,total)
+    return coordinates
+    
+def loadIds(file):
+    '''Input file is a 3 column TSV file with sequence, Wikipedia id, NRIS id'''
+    reader = csv.reader(FileInput(file),dialect=csv.excel_tab)
+    count = 0
+    ids = {}
+    dupes=[]
+    for r in reader:
+        count += 1
+        if r[1] and r[2]:
+            wpid = r[1]
+            nrisid = r[2].rjust(8,'0')
+            if len(nrisid) > 8 or nrisid.find('E') > 0:
+                log.debug('**skipping NRIS ID %s, wpid %s' % (nrisid, wpid))
+            else:
+                if nrisid in ids:
+                    dupes.append(nrisid)
+                else:
+                    ids[nrisid]=wpid
+    for i in dupes:
+        wpid = ids[i]
+        del ids[i]
+        log.warn('Skipping Wikipedia article #%s with multiple infoboxes' % wpid)
+    log.debug('Read %d ids' % count)
+    return ids
 
 def reconcileName(session, name, types):
     try:
@@ -619,24 +653,24 @@ def wpid2Item(items,wpid):
 
 
 def acre2sqkm(acre):
+    '''Convert 1/10ths of an acre (as used by NRIS) to sq. km'''
     if acre == '9': # Special signal value indicating < 1 acre
         acre = 0    
     if acre == '':
         acre = 0
-    # TODO double check to be sure this is 1/10s of an acre
     return fbgeo.acre2sqkm(float(acre) * 0.1)
 
 
             
 def main():
-    
+    session = FreebaseSession.getSessionFromArgs()    
     log.info(''.join(['Selection criteria : States = ', str(incState),
                        ', Significance = ',str(incSignificance),
                        ', Types = ',str(incResourceType)]))
     log.info('Create topics = ' + str(createTopics))
     log.info('Starting record number = ' + str(startingRecordNumber))
     startTime = datetime.datetime.now()
-    log.info('Starting on ' + freebaseHost + ' at ' + startTime.isoformat())
+    log.info('Starting on ' + session.service_url + ' at ' + startTime.isoformat())
     
     # Make temporary directory
     tempDir = tempfile.mkdtemp(suffix='dir', prefix='tempNRISdata') + '/'
@@ -651,19 +685,24 @@ def main():
             url = kmzBaseUrl + urllib.quote(filename)
             log.info('Fetching ' + url)
             urllib.urlretrieve(url, workDir + filename)
-#        log.info('Fetching ' + geoUrl)
-#        urllib.urlretrieve(geoUrl, workDir + geoFile)
+        log.info('Fetching ' + geoUrl)
+        urllib.urlretrieve(geoUrl, workDir + geoFile)
     else:
-        log.debug('Using local files (no fetch from NHRIS web site)')
+        log.debug('Using local files (no fetch from NRIS web site)')
         
     # Unzip our two compressed files into a temporary directory
     unzipFiles([workDir+masterFile, workDir+detailFile], tempDir)         
     
-    # Load geo data
-    log.info('Loading geo data from KML/KMZ files')
-    coordinates = {}
-    # TODO: Switch this to use spatial.mdb
+    # Load geo data - KML data gets preference because it's more accurate (geocoded from street addresses)
+    log.info('Loading geo data')
     coordinates = NRISkml.parseFiles([workDir + f for f in kmzFiles])
+    for t in ['point','centroid']: #['Acreage', 'centroid', 'Main', 'point', 'polygon']
+        tempGeo = tempDir + t + '.csv'
+        status = subprocess.call('mdb-export %sspatial.mdb %s > %s' % (workDir,t,tempGeo),shell=True)
+        loadGeo(tempGeo,coordinates)
+
+    # Load IDs for all Wikipedia articles which have NRHP infoboxes
+    wpids = loadIds('nris-ids.csv')
     
     # Read in all our master tables '*M.DBF' and detail xref tables *D.DBF
     for table in lookupTables:
@@ -678,7 +717,6 @@ def main():
     countyColumn = countyTable['__fields__'].index('COUNTYCD') - 1
 
     # Establish session
-    session = FreebaseSession(freebaseHost, username, password)
     session.login()
 
     # Query server for IDs of states, categories, and significance levels
@@ -778,7 +816,10 @@ def main():
             # We used to only require an exact match if we had more than one listing
             # with a name, but we're being stricter now to prevent potential false matches
             #topicGuid,topicName = queryTopic(session, refNum, name, aliases, len(names[name]) > 1)
-            topicGuid,topicName = queryTopic(session, refNum, name, aliases, True)
+            wpid = None
+            if refNum in wpids:
+                wpid = wpids[refNum]
+            topicGuid,topicName = queryTopic(session, refNum, wpid, name, aliases, True)
             
             # TODO return a list of candidate topics to be queue for human review
     
