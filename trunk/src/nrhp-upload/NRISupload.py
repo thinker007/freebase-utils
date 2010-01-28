@@ -38,7 +38,7 @@ from simplestats import Stats
 
 ### Initialization of globals (ick!)
 
-fetch = True # Fetch files from National Park Service (only published a few times a year)
+fetch = False # Fetch files from National Park Service (only published a few times a year)
 
 # Inclusion criteria for states, significance, and resource type
 # Empty list [] matches everything
@@ -134,8 +134,8 @@ def queryName(session, name):
               'type' : [],
               't:type' : '/common/topic',
               # Exclude NRIS listings because they would have matched exactly on refnum
-              't2:type' : {'id':'/base/usnris/nris_listing',
-                           'optional':'forbidden'},
+              't2:type' : [{'id':'/base/usnris/nris_listing',
+                           'optional':'forbidden'}],
               'key' : [{'namespace' : '/wikipedia/en_id',
                        'value' : None
                        }]
@@ -160,7 +160,7 @@ def queryTypeAndName(session, type, names, createMissing = False):
         }]
         results = session.fbRead(query)
         if not results:
-#            log.debug([ 'Warning: name not found ', name, ' type: ', type])
+            log.debug(' '.join(['Warning: name not found', name, 'type:', type]))
             if createMissing:
                 guid = createTopic(session, name, [type])
                 if guid:
@@ -183,9 +183,18 @@ def queryTypeAndName(session, type, names, createMissing = False):
 #                    log.error('Failed to create new entry ', name, ' type: ', type)
     return ids
 
+def queryArchFirm(session, names):
+    '''Query server for architecture firm by name.  List of GUIDs returned.  Non-unique and not found names skipped.'''
+    normalizedNames = [normalizePersonName(n) for n in names if n.lower() != 'unknown']
+    for n in normalizedNames:
+        stats.incr('ArchFirm:',str(n))
+    # '/architecture/architectural_contractor' '/architecture/engineer'
+    # '/architecture/engineering_firm'
+    return queryTypeAndName(session, '/architecture/architecture_firm', normalizedNames)
+
 def queryArchitect(session, names):
     '''Query server for architect by name.  List of GUIDs returned.  Non-unique and not found names skipped.'''
-    normalizedNames = [normalizePersonName(n) for n in names]
+    normalizedNames = [normalizePersonName(n) for n in names if n.lower() != 'unknown']
     # TODO Create missing architects?
     for n in normalizedNames:
         stats.incr('Arch:',str(n))
@@ -202,8 +211,8 @@ def uniquifyYears(seq):
     result = []
     for item in seq:
         yr = item[1]
-        if yr and int(yr) > 2020:
-            yr = yr + " B.C.E."
+        if yr and int(yr) > 2020: # Assume dates in future are really BCE
+            yr = "-" + yr
         if yr and yr not in result:
             result.append(yr)
     result.sort()
@@ -273,7 +282,7 @@ def addAliases(session, guid, aliases):
                  '/common/topic/alias': [{'connect':'insert', 
                                           'lang': '/lang/en',
                                           'type': '/type/text',
-                                          'value':a} for a in set(aliases)]
+                                          'value':a.strip()} for a in set(aliases)]
                  }
         log.debug('Adding aliases ' + repr(aliases) + ' to ' + guid)
         return session.fbWrite(query)
@@ -374,7 +383,7 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
 
 
 def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid, 
-                    archIds, archStyleIds):
+                    archIds, archFirmIds, archStyleIds):
     query = {'guid': topicGuid, 
              'type': '/architecture/structure'}
     # TODO refactor into fbGEO
@@ -394,6 +403,9 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
     if archIds:
         query['architect'] = [{'connect': 'insert', 'guid': i} for i in set(archIds)]
         stats.incr('Wrote', 'Architect')
+    if archFirmIds:
+        query['architecture_firm'] = [{'connect': 'insert', 'guid': i} for i in set(archFirmIds)]
+        stats.incr('Wrote', 'ArchitectureFirm')
     if archStyleIds:
         query['architectural_style'] = [{'connect': 'insert', 'guid': i} for i in set(archStyleIds)]
         stats.incr('Wrote', 'ArchStyle')    
@@ -411,6 +423,7 @@ def addMisc(session, topicGuid, significantPersonIds, significantYears, culture)
     # TODO add /base/usnris/significant_person type to person objects
     
     if culture:
+        # TODO: screen for dupes which differ only in case since MQL considers them identical (set() won't work)
         query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect': 'insert', 'lang': '/lang/en', 'value': c} for c in set(culture)]
     # TODO: Try to match free form text to a /people/ethnicity topic
     
@@ -441,24 +454,30 @@ def queryNrisTopic(session, refNum, wpid):
                'id' : None,
                'name' : None,
                '/base/usnris/nris_listing/item_number' : refNum,
-               'key':{'namespace':'/wikipedia/en_id','value':None,'optional':True},
+               'key':[{'namespace':'/wikipedia/en_id','value':None,'optional':True}],
                }]
     results = session.fbRead(query)
     if results:
         if len(results) == 1:
-            if wpid and results[0]['key'] and results[0]['key']['value'] != wpid:
+            if wpid:
+                for k in results[0]['key']:
+                    if k['value'] == wpid:
+                        return results[0]['guid'],results[0]['name']
                 log.error('Mismatch between NRIS refnum %s and Wikipedia key %s' % (refNum, wpid))
-                return None,None
+                return -1,None
             else:
                 return results[0]['guid'],results[0]['name']
         elif len(results) > 1:
-            log.error('multiple topics with the same NHRIS reference number ' + refNum) 
+            log.error('multiple topics with the same NHRIS reference number ' + refNum)
+            return -1,None
     return None, None
 
 def queryTopic(session, refNum, wpid, name, aliases, exactOnly):
     # Look up by Ref # enumeration first
     topicGuid,topicName = queryNrisTopic(session, refNum, wpid)
-
+    if topicGuid == -1:
+        return topicGuid,topicName
+    
     if not topicGuid:
         results = queryName(session, name)
         incrMatchStats(results)
@@ -565,7 +584,8 @@ def loadIds(file):
                 log.debug('**skipping NRIS ID %s, wpid %s' % (nrisid, wpid))
             else:
                 if nrisid in ids:
-                    dupes.append(nrisid)
+                    if not nrisid in dupes:
+                        dupes.append(nrisid)
                 else:
                     ids[nrisid]=wpid
     for i in dupes:
@@ -820,7 +840,10 @@ def main():
             if refNum in wpids:
                 wpid = wpids[refNum]
             topicGuid,topicName = queryTopic(session, refNum, wpid, name, aliases, True)
-            
+
+            if topicGuid == -1:
+                continue # error on lookup, just bail out
+                
             # TODO return a list of candidate topics to be queue for human review
     
             # TODO Check for incompatible/unlikely types (book, movie, etc)
@@ -869,7 +892,9 @@ def main():
             # TODO definition of this field is actually "architect, builder, or engineer"
             # so we could try harder to find a match in other disciplines
             # currently we throw away any builders or engineers
-            archIds = queryArchitect(session, lookup('ARCHTECD', refNum))
+            names = lookup('ARCHTECD', refNum)
+            archFirmIds = queryArchFirm(session, names)
+            archIds = queryArchitect(session, names)
             archStyleIds = queryArchStyle(session, lookup('ARSTYLD', refNum))
 
             # TODO Do this later when we have a human review queue set up
@@ -896,7 +921,7 @@ def main():
             # Handle location
             if resourceType == 'B': # TODO add type str'U'cture ?
                 query = addBuildingInfo(session, streetAddress, topicGuid, stateGuid, 
-                                        cityTownGuid, archIds, archStyleIds)
+                                        cityTownGuid, archIds, archFirmIds, archStyleIds)
     
             if stateGuid:
                 containerGuids = [stateGuid]
