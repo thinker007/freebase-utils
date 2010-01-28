@@ -7,7 +7,6 @@ Created on Feb 28, 2009
 @copyright: 2009 Thomas F. Morris
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 
-TODO add name transformations for things like Mt., St., etc.
 '''
 
 import logging
@@ -15,9 +14,33 @@ from math import cos, sqrt
 
 from pyproj import Proj, transform
 
+from FreebaseSession import FreebaseSession
+
 _log = logging.getLogger('fbgeo')
 _usStates = {}
+_SUBS=[('(Independent City)',''),
+       ('(Independent city)',''),
+       ('St.','Saint'),
+       ('Ste.','Sainte'),
+       ('Twp.','Township'),
+       ('Twp','Township'),
+       ('Twnshp.','Township'),
+       ('Twnshp','Township'),
+       ('Ft.','Fort'),
+       ('Mt.','Mount'),
+        ]
 
+_BEGIN_SUBS=[('N.','North'),('S.','South'),('E.','East'),('W.','West')]
+
+def normalizePlaceName(name):
+    for s in _BEGIN_SUBS:
+        if name.startswith(s[0]):
+            name = s[1]+name[2:]
+    for s in _SUBS:
+        name = name.replace(s[0],s[1])
+    return name.strip()
+    
+    
 def approximateDistance(a, b):
     '''Compute approximate local flat earth distance between two points represented by lat/long tuples'''
     milePerDegree = 60 * 1.15 # 1 nm/minute, 1 1/7 mile/nm - VERY APPROXIMATE!
@@ -83,10 +106,8 @@ def queryUsStateGuid(session, state):
 def queryCityTownGuid(session, townName, stateGuid, countyName=None):
     '''Query Freebase for town by name and return single Id or None '''
 
-    townName = townName.replace('(Independent City)','').strip()
-
     # special case Washington, DC since it's not really contained by itself
-    if stateGuid == _usStates['DC'] and townName == 'Washington':
+    if stateGuid == _usStates['DC'] and townName.startswith('Washington'):
         return _usStates['DC']
     
     results = queryCityTown(session, townName, stateGuid, countyName)
@@ -116,17 +137,31 @@ def queryCityTownGuid(session, townName, stateGuid, countyName=None):
 def queryCityTown(session, townName, stateGuid, countyName = None):
     '''Query Freebase and return list of ids for any matching towns '''
     '''county name is matched as leading string to account for both Suffolk and Suffolk County forms'''
+    
     query = [{'guid' : None,
                'id' : None,
-               # TODO check aliases as well
-               'name' : townName,
+               'name':None,
+               '/type/reflect/any_value' : [{'lang' : '/lang/en',
+                                            'link|=' : ['/type/object/name',
+                                                        '/common/topic/alias'],
+                                            'type' : '/type/text',
+                                            'value' : townName}],
                '/location/location/containedby' : {'guid' : stateGuid},
                't:type' : '/location/citytown',
                'type' : []
                }]
     if countyName:
         query[0]['cb:/location/location/containedby~='] = '^'+countyName
-    return session.fbRead(query)
+    result = session.fbRead(query)
+    if not result:
+        townName = normalizePlaceName(townName)
+        query[0]['/type/reflect/any_value'][0]['value'] = townName
+        result = session.fbRead(query)
+        if not result:
+            townName = townName.replace('Township','').strip()
+            query[0]['/type/reflect/any_value'][0]['value'] = townName
+            result = session.fbRead(query)
+    return result
 
 def queryCountyGuid(session, name, stateGuid):
     '''Query Freebase and return ID for matching county in state'''
@@ -222,4 +257,25 @@ def utm2lonlat(zone,east,north):
 #    p2 = Proj(init='epsg:3785')
 #    x,y=transform(p1,p2,x1,y1)
     return x1,y1
+
+def test():
+    tests = [('Newlin Twp.','Chester','PA'),
+#             ('St. Petersburg Beach','Pinellas', 'FL'),
+             ('W. Bradford Twp.','Chester', 'PA'),
+             ('S. Brunswick Township','Middlesex', 'NJ'),
+             ('Mt. Laurel Township','Burlington', 'NJ'),
+#             ('','',''),
+#             ('','',''),
+#             ('','',''),
+#             ('','',''),
+#             ('','',''),
+#             ('','',''),
+             ]
+    session = FreebaseSession('www.freebase.com','','')
+    for t in tests:
+        result =queryCityTown(session, t[0], queryUsStateGuid(session, t[2]), t[1]) 
+        print t,result[0]['id'],result[0]['name']
+        
+if __name__ == '__main__':
+    test()
     
