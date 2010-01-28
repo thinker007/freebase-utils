@@ -1,0 +1,10 @@
+module com { module freebase { module util { module JsonEncode {
+
+    interface XJsonEncode
+    {
+      string jsonEncode( [in] string s1 );
+
+      string fbKeyEncode( [in] string s1 );
+    };
+
+}; }; }; };
