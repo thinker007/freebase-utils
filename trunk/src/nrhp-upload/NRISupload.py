@@ -24,6 +24,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import traceback
 import urllib
 import urllib2
 import zipfile
@@ -119,19 +120,10 @@ def indexNames(db):
     log.debug(['Counts of non-uniques:', nonUniques])
     return names
 
-
-# TODO move to someplace general
 def queryName(session, name):
-    # Query Freebase by name (including aliases) to see if we've got this already
-    query = [{'/type/reflect/any_value' : [{'lang' : '/lang/en',
-                                            'link|=' : ['/type/object/name',
-                                                        '/common/topic/alias'],
-                                            'type' : '/type/text',
-                                            'value' : name}],
-              'name' : None,
-              'guid' : None,
-              'id' : None,
-              'type' : [],
+    ''' Query Freebase by name (including aliases) excluding known listings'''
+    
+    query = { 'type' : [],
               't:type' : '/common/topic',
               # Exclude NRIS listings because they would have matched exactly on refnum
               't2:type' : [{'id':'/base/usnris/nris_listing',
@@ -139,73 +131,25 @@ def queryName(session, name):
               'key' : [{'namespace' : '/wikipedia/en_id',
                        'value' : None
                        }]
-              }]
-    results = session.mqlread(query)
+              }
+    results = session.fbQueryName(name, query)
     return results
 
-def queryTypeAndName(session, type, names, createMissing = False):
-    '''Query server for given type by name(s) in name or alias field.  Return empty list if not unique or not found'''
-    if not names:
-        return []
-    
-    ids = []
-    for name in names:
-        query = [{'/type/reflect/any_value' : [{'lang' : '/lang/en',
-                                                'link|=' : ['/type/object/name',
-                                                            '/common/topic/alias'],
-                                                'type' : '/type/text',
-                                                'value' : name}],
-                  'guid' : None,
-                  'type' : type
-        }]
-        results = session.fbRead(query)
-        if not results:
-            log.debug(' '.join(['Warning: name not found', name, 'type:', type]))
-            if createMissing:
-                guid = createTopic(session, name, [type])
-                if guid:
-                    ids.append(guid)
-                    log.info('Created new topic ' + str(guid) + '  ' + name)
-                else:
-                    log.error('Failed to create new entry ' + name + ' type: ' + type)
-        elif len(results) == 1:
-            ids.append(results[0]['guid'])
-#            log.debug(['                                                          found ', name])
-        else:
-            log.warn('Non-unique name found for unique lookup ' + name +' type: ' + type) 
-            # TODO We could create a new entry here to be manually disambiguated later
-#            if createMissing:
-#                guid = createTopic(session, name, type)
-#                if guid:
-#                    ids.append(guid)
-#                    log.info('Created new topic which may need manual disambiguation ', guid, '  ', name)
-#                else:
-#                    log.error('Failed to create new entry ', name, ' type: ', type)
-    return ids
-
-def queryArchFirm(session, names):
-    '''Query server for architecture firm by name.  List of GUIDs returned.  Non-unique and not found names skipped.'''
-    normalizedNames = [normalizePersonName(n) for n in names if n.lower() != 'unknown']
-    for n in normalizedNames:
-        stats.incr('ArchFirm:',str(n))
-    # '/architecture/architectural_contractor' '/architecture/engineer'
-    # '/architecture/engineering_firm'
-    return queryTypeAndName(session, '/architecture/architecture_firm', normalizedNames)
 
 def queryArchitect(session, names):
     '''Query server for architect by name.  List of GUIDs returned.  Non-unique and not found names skipped.'''
     normalizedNames = [normalizePersonName(n) for n in names if n.lower() != 'unknown']
-    # TODO Create missing architects?
     for n in normalizedNames:
         stats.incr('Arch:',str(n))
-    return queryTypeAndName(session, '/architecture/architect', normalizedNames)
-
-def remap(key, dict):
-    '''Remap a name using the values in dict.  Return original name if not found. '''
-    try:
-        return dict[key]
-    except:
-        return key
+        
+#    type = [
+#    "/architecture/engineer",
+#    "/architecture/engineering_firm",
+#    "/architecture/architect",
+#    "/architecture/architecture_firm"
+#    ]
+    type = '/architecture/architect'
+    return session.queryTypeAndName(type, normalizedNames)
 
 def uniquifyYears(seq):
     result = []
@@ -218,55 +162,87 @@ def uniquifyYears(seq):
     result.sort()
     return result
 
-def queryArchStyle(session, codes):
-    '''Query server for architectural style by name.  Return None if not unique or not found'''
-    # TODO Add skip list (other, multiple, etc)
-    for c in '01','80','90': # Remove None, Other, Mixed
-        if c in codes:
-            codes.remove(c)
+class ArchStyle:
 
-    names = [lookup('ARSTYLM', c)[0].lower() for c in codes]
-    styleMap = {'bungalow/craftsman' : 'american craftsman',
-                'mission/spanish revival' : 'mission revival',
-                'colonial' : 'american colonial',
-                'pueblo' : 'pueblo revival',
-                'chicago' : 'chicago school',
-                'late victorian' : 'victorian',
-                'modern movement' : 'modern',
-                 }
-    names = [remap(n,styleMap) for n in names]
-    ids = queryTypeAndName(session, '/architecture/architectural_style', names)
-    for n in names:
-        stats.incr('ArchStyle:',str(n))
-    if len(codes) != len(ids):
-        log.warn('Failed to find Architecture style name/id(s)' + repr(codes) + repr(names) + ' IDs: ' + repr(ids))
-    return ids
+    def __init__(self,session):
+        '''Query Freebase server for all architectural styles in our short table'''
+    
+        # Remap some NPS architecture style names to their Freebase equivalents
+        styleMap = {'bungalow/craftsman' : 'american craftsman',
+                    'mission/spanish revival' : 'mission revival',
+                    'colonial' : 'american colonial',
+                    'pueblo' : 'pueblo revival',
+                    'chicago' : 'chicago school',
+                    'late victorian' : 'victorian',
+                    'modern movement' : 'modern',
+                     }
+        
+        self.ids={}
+        for c in lookupKeys('ARSTYLM'):
+            if not c in ['01','80','90']: # Skip None, Other, Mixed
+                name = lookup('ARSTYLM', c)[0].lower()
+                name = styleMap.get(name, name)
+                result = session.queryTypeAndName('/architecture/architectural_style', [name])
+                if len(result) != 1:
+                    log.warn('Failed to find Architecture style code: %s, name: %s' % (c,name))
+                else:
+                    self.ids[c]=(result[0],name)
 
-def queryNhrpSignificanceIds(session):
-    '''Query server and return dict of ids for significance levels keyed by first two letters of name'''
-    query = [{'type' : '/base/usnris/significance_level',
-              'name' : None,
-              'id' : None,
-              'guid' : None}]
-    results = session.fbRead(query)
-    if len(results) < 4:
-        log.critical('Expected at least 4 significance levels, got ' + str(results))
-    return dict([(item['name'].lower()[0:2], item['guid']) for item in results])
+    def lookup(self,codes):
+        '''Look up Freebase ID for architectural style.  Return None if not found'''
+        # TODO Add skip list (other, multiple, etc)
+    
+        ids = []
+        for c in codes:
+            if c in self.ids:
+                id,name=self.ids[c]
+                ids.append(id)
+                stats.incr('ArchStyle:',name)
+            else:
+                log.warn('Failed to find Architecture style code:' + c)
+        return ids
 
-def queryNhrpCategoryGuids(session):
-    '''Query server and return dict of ids for categories keyed by name'''
-    catProp = '/protected_sites/natural_or_cultural_site_designation/categories'
-    query = [{catProp : [
-          {
-            'guid' : None,
-            'id' : None,
-            'name' : None
-          }],
-        'id' : '/en/national_register_of_historic_places'
-      }]
-    results = session.fbRead(query)
-    return dict([(cat['name'].lower(), cat['guid']) for cat in results[0][catProp]])
 
+class Significance:
+    def __init__(self,session):
+        '''Query server and return dict of ids for significance levels keyed by first two letters of name'''
+        query = [{'type' : '/base/usnris/significance_level',
+                  'name' : None,
+                  'id' : None,
+                  'guid' : None}]
+        results = session.fbRead(query)
+        if len(results) < 4:
+            log.critical('Expected at least 4 significance levels, got ' + str(results))
+        self.guids= dict([(item['name'].lower()[0:2], item['guid']) for item in results])    
+    
+    def lookup(self,significance):
+        if significance:
+            s = significance.lower()
+            if s in self.guids:
+                return self.guids[s]
+
+
+class Category:
+    def __init__(self,session):
+        '''Query server and return dict of ids for categories keyed by name'''
+        catProp = '/protected_sites/natural_or_cultural_site_designation/categories'
+        query = [{catProp : [
+              {
+                'guid' : None,
+                'id' : None,
+                'name' : None
+              }],
+            'id' : '/en/national_register_of_historic_places'
+          }]
+        results = session.fbRead(query)
+        self.guids = dict([(cat['name'].lower(), cat['guid']) for cat in results[0][catProp]])
+
+    def lookup(self,category):
+        if category:
+            category = category.lower().strip()
+            if category in self.guids:
+                return self.guids[category]
+        
 def addType(session, guids, types):
     for guid in guids:
         query = {'guid': guid, 
@@ -311,13 +287,13 @@ def checkAddGeocode(session, topicGuid, coords):
         location = fbgeo.parseGeocode(geocode)
         if location:
             if fbgeo.isSwapped(location, coords):
-                print '*** Long/lat appear swapped ', geocode, coords
-            #   print '*** Swapping geocode long/lat', geocode, coords
+                log.warn('*** Long/lat appear swapped %s %s' % (repr(geocode), repr(coords)))
+            #   log.debug('*** Swapping geocode long/lat %s %s' % (repr(geocode), repr(coords)))
             #   response = fbgeo.updateGeocode(session, geocode['guid'], coords[:2])
             else:
                 distance = fbgeo.approximateDistance(location, coords)
                 if (distance > 0.1):
-                    log.debug('Skipping topic with existing geo info ' + str(topicGuid) + ' distance = ' + str(distance) + ' Coords = ' + repr(coords) + ' ' + repr(location))
+                    log.debug('Skipping topic with existing geo info %s distance = %d Coords = %s %s' % (topicGuid,distance,repr(coords),repr(location)))
     return response
 
 
@@ -338,12 +314,6 @@ def addListedSite(session, topicGuid, categoryGuid, certDate):
         query['designation_as_natural_or_cultural_site']['category_or_criteria'] = {'connect': 'insert', 
                                                                                     'guid': categoryGuid}    
     return session.fbWrite(query)
-
-def significance2guid(significance, significanceGuids):
-    if significance:
-        s = significance.lower()
-        if s in significanceGuids:
-            return significanceGuids[s]
 
 def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes, significanceGuid):
     types = ['/location/location',
@@ -383,7 +353,7 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
 
 
 def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid, 
-                    archIds, archFirmIds, archStyleIds):
+                    archIds, archStyleIds):
     query = {'guid': topicGuid, 
              'type': '/architecture/structure'}
     # TODO refactor into fbGEO
@@ -403,9 +373,9 @@ def addBuildingInfo(session, streetAddress, topicGuid, stateGuid, cityTownGuid,
     if archIds:
         query['architect'] = [{'connect': 'insert', 'guid': i} for i in set(archIds)]
         stats.incr('Wrote', 'Architect')
-    if archFirmIds:
-        query['architecture_firm'] = [{'connect': 'insert', 'guid': i} for i in set(archFirmIds)]
-        stats.incr('Wrote', 'ArchitectureFirm')
+#    if archFirmIds:
+#        query['architecture_firm'] = [{'connect': 'insert', 'guid': i} for i in set(archFirmIds)]
+#        stats.incr('Wrote', 'ArchitectureFirm')
     if archStyleIds:
         query['architectural_style'] = [{'connect': 'insert', 'guid': i} for i in set(archStyleIds)]
         stats.incr('Wrote', 'ArchStyle')    
@@ -430,19 +400,6 @@ def addMisc(session, topicGuid, significantPersonIds, significantYears, culture)
     if query:
         query['guid'] = topicGuid
         return session.fbWrite(query)
-           
-def createTopic(session, name, types):
-    common = "/common/topic"
-    if not common in types: # make sure it's a topic too
-        types.append(common)
-    query = {'create': 'unconditional', # make sure you've checked to be sure it's not a duplicate
-             'type': types,
-             'name' : name,
-             'guid' : None
-             }
-    response = session.fbWrite(query)
-    guid = response['guid']
-    return guid
 
 def createPerson(session, name):
     # Might not be a good idea to assume they're all deceased, but it's a *historic* database
@@ -566,7 +523,7 @@ def loadGeo(file,coordinates):
             except:
                 log.warn('failed to convert coordinates %s, %s, %s for id %s' % (zone,easting,northing,id))
                 count -= 1
-    print 'Loaded %d of %d coordinate pairs' % (count,total)
+    log.debug('Loaded %d of %d coordinate pairs' % (count,total))
     return coordinates
     
 def loadIds(file):
@@ -595,15 +552,6 @@ def loadIds(file):
     log.debug('Read %d ids' % count)
     return ids
 
-def reconcileName(session, name, types):
-    try:
-        response = session.reconcile(name, types)
-    except:
-        log.error('**Freebase reconciliation service failed : ' + name + repr(types))
-        return []  
-    return response
-
-
 def lookup1(table, key):
     result = lookup(table, key)
     if result == None or result == '':
@@ -623,6 +571,16 @@ def lookup(table, key):
         log.critical('Unknown table: ' + table)
         return ''
 
+def lookupKeys(table):
+    try:
+        t = tables[table]
+        keys = t.keys()
+        keys.remove('__fields__')
+        return keys
+    except KeyError:
+        log.critical('Unknown table: ' + table)
+        return ''
+    
 def lookupAliases(refNum):
     alias = lookup('OTHNAMED', refNum)
     aliases = []
@@ -739,10 +697,11 @@ def main():
     # Establish session
     session.login()
 
-    # Query server for IDs of states, categories, and significance levels
-    catGuids = queryNhrpCategoryGuids(session)
-    significanceGuids = queryNhrpSignificanceIds(session)
-    # TODO: We could lookup and cache IDs for Architects, and Architectural Styles too
+    # Query server for IDs of categories, and significance levels
+    archStyle = ArchStyle(session)
+    categories = Category(session)
+    significances = Significance(session)
+    # TODO: We could potentially cache IDs for Architects too (but not do pre-lookups)
     
     db = dbf.Dbf(tempDir + 'PROPMAIN.DBF')
     log.debug('Main property fields ' + str(db.fieldNames))
@@ -793,9 +752,8 @@ def main():
             restricted = (not rec['RESTRICT'] == '') # address restricted
             if restricted:
                 stats.incr('General','LocationInfoRestricted')
-                # Skip restricted address sites for now (mostly archaelogical sites)
                 if not incRestricted:
-    #               log.debug([ 'Skipping restricted site location', restricted,refNum, name])
+                    log.debug([ 'Skipping restricted site location', restricted,refNum, name])
                     continue
                         
             streetAddress = rec['ADDRESS']
@@ -817,11 +775,10 @@ def main():
                             cityTown = ''
            
             category = lookup('NOMNAMED', refNum)
-            categoryGuid = None
             if category:
-                category = category[0].lower().strip()
-                if category in catGuids:
-                    categoryGuid = catGuids[category]
+                category = category[0]
+            categoryGuid = categories.lookup(category)
+
                 
             # Skip if not a National Historic Landmark, etc
             if not incNonNominated and category == '':
@@ -842,6 +799,9 @@ def main():
             topicGuid,topicName = queryTopic(session, refNum, wpid, name, aliases, True)
 
             if topicGuid == -1:
+                log.debug('Lookup failure (problem ID mismatch) - skipping - ' 
+                          + ' '.join([refNum, resourceType, state, str(significance), name, ' - ', category]))
+                stats.incr('TopicMatch','Mismatch')
                 continue # error on lookup, just bail out
                 
             # TODO return a list of candidate topics to be queue for human review
@@ -893,14 +853,13 @@ def main():
             # so we could try harder to find a match in other disciplines
             # currently we throw away any builders or engineers
             names = lookup('ARCHTECD', refNum)
-            archFirmIds = queryArchFirm(session, names)
             archIds = queryArchitect(session, names)
-            archStyleIds = queryArchStyle(session, lookup('ARSTYLD', refNum))
+            archStyleIds = archStyle.lookup(lookup('ARSTYLD', refNum))
 
             # TODO Do this later when we have a human review queue set up
 #            significantNames = [normalizePersonName(n) for n in lookup('SIGNAMED', refNum)]
-#            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, True)            
-#            significantPersonIds = queryTypeAndName(session, '/people/person', significantNames, False)
+#            significantPersonIds = session.queryTypeAndName('/people/person', significantNames, True)            
+#            significantPersonIds = session.queryTypeAndName('/people/person', significantNames, False)
             significantPersonIds = []
 
             significantYears = uniquifyYears(lookup('SIGYEARD', refNum))
@@ -914,14 +873,14 @@ def main():
             log.debug( '  %2.0f%% ' % (count*100.0/totalCount) + ' '.join([str(count), refNum, resourceType, state, str(significance), str(certDate), name, category]))
     
             # Write/update information
-            sigGuid = significance2guid(significance, significanceGuids)
+            sigGuid = significances.lookup(significance)
             mandatoryTypes = ['/location/location'] if area > 0 else []
             response = updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes, sigGuid)
     
             # Handle location
             if resourceType == 'B': # TODO add type str'U'cture ?
                 query = addBuildingInfo(session, streetAddress, topicGuid, stateGuid, 
-                                        cityTownGuid, archIds, archFirmIds, archStyleIds)
+                                        cityTownGuid, archIds, archStyleIds)
     
             if stateGuid:
                 containerGuids = [stateGuid]
@@ -949,6 +908,8 @@ def main():
     #            stats.incr('PossibleCompoundTopic')
                 # Flag/log somewhere
 
+    except Exception:
+        traceback.print_exc()
     finally:
         db.close()
         endTime = datetime.datetime.now()
@@ -957,7 +918,7 @@ def main():
         log.info(stats.dump())
     
     # Clean up our temporary directory
-#    print 'Cleaning ', tempDir
+#    log.debug 'Cleaning ', tempDir
 #    shutil.rmtree(tempDir, True)
     
 if __name__ == '__main__':
