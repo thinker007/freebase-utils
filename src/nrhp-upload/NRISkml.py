@@ -11,10 +11,13 @@ Created on Feb 27, 2009
 
 
 from datetime import datetime
+import logging
 import re
 from xml.sax import parseString
 from xml.sax.handler import ContentHandler
 import zipfile
+
+_log = logging.getLogger('fbkml')
 
 kmzFiles = ['NRHP - Midwest Region.kmz',
             'NRHP - Northeast Region.kmz',
@@ -111,7 +114,7 @@ def parse(file, coordinates):
         entries = kmlFile.filelist
         parseString(kmlFile.read(entries[0].filename), handler)
 
-    print "Loaded %d coordinate pairs (%d geocoded)." % (handler.count, handler.geocodedCount)
+    _log.debug("Loaded %d coordinate pairs (%d geocoded)." % (handler.count, handler.geocodedCount))
     return handler.coordinates
 
 def parseFiles(files = kmzFiles):
