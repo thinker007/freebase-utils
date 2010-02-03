@@ -173,40 +173,52 @@ class FreebaseSession(HTTPMetawebSession):
         guid = response['guid']
         return guid
 
-#    def freeqSubmit(self, triples, graphport='sandbox', comment=None,
-#                    tool_id='/guid/9202a8c04000641f800000001378d774'):
-#        """do a mql write. For a more complete description,
-#        see http://www.freebase.com/view/en/api_service_mqlwrite"""
-#
-#        query = {}
-#        query['user']=''
-#        query['action_type']='LOAD_TRIPLE'
-#        query['operator']='/user/spreadsheet_bot'
-#        query['check_params']=False
-#        query['graphport']=graphport
-#        query['mdo_info']={"software_tool":tool_id,"name":comment}
-#        query['payload']=triples
-#        
-#        qstr = json.dumps(query, separators=SEPARATORS)
-#        
-#        self.log.debug('FREEQSUBMIT: %s', qstr)
-#        
-#        service = '/freeq/spreadsheet'
-#        
-#        self.log.info('%s: %s',
-#                      service,
-#                      query)
-#
-#        r = self._httpreq_json(service, 'GET')
-#        
-#        headers = {'Referer' : 'http://data.labs.freebase.com/loader/',
-#                   'Origin' : 'http://data.labs.freebase.com'}
-#        
-#        r = self._httpreq_json(service, 'POST',
-#                               form=query, headers=headers)
-#        
-#        self.log.debug('FREEQSUBMIT RESP: %r', r)
+    def tripleSubmit(self, triples, graphport='sandbox', job_comment=None, data_comment=None,
+                    tool_id='/guid/9202a8c04000641f800000001378d774'):
+        """do a mql write. For a more complete description,
+        see http://www.freebase.com/view/en/api_service_mqlwrite"""
+        
+        # Huge hack to swap out service URL so we can use session login cookie
+        domain = 'data.labs.freebase.com'
+        # copy cookies over to new domain
+        for name,c in self.cookiejar._cookies['www.freebase.com']['/'].items():
+            c.domain=domain
+            self.cookiejar.set_cookie(c)
+
+        service_url = self.service_url
+        self.service_url="http://" + domain + "/"
+        try:
+        
+            form = {
+            'action_type':'LOAD_TRIPLE',
+    #        'user' :'',
+    #        'operator' : '/user/spreadsheet_bot',
+            'check_params' : False, # prevents 'not a valid bot user' authentication error
+#            'pod' : graphport, # obsolete?
+            'comments' : job_comment,
+            'graphport':graphport,
+            'mdo_info' : {"software_tool":tool_id,
+                          "info_source":"/wikipedia/en/wikipedia",
+                          "name":data_comment},
+            'payload':triples
+            }
+             
+#            self.log.debug('FREEQSUBMIT: %s', form)
+            
+            service = '/triples/data/'
+#            headers = {'Accept' : 'text/plain'}            
+            resp,body = self._httpreq(service, 'POST',
+                                   form=form)#, headers=headers)
+            
+            self.log.debug('FREEQSUBMIT RESP: %r', resp)
+            self.log.debug('FREEQSUBMIT RESP: %r', body)
+        finally:
+            self.service_url = service_url
+
+        #self.log.info('result: %s', Delayed(logformat, r))
+        return resp,body
 #        return self._mqlresult(r)
+    
     
 if __name__ == "__main__":
     session = FreebaseSession('www.sandbox-freebase.com','tfmorris','password')
