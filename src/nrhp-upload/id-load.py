@@ -1,9 +1,14 @@
 '''
-Load missing NRIS ids into Freebase using FreeQ/Triple Loader.
+Load missing NRIS ids into Freebase using FreeQ/Triple Loader.  Input is a file of
+Wikipedia ID / NRIS ref num tuples.  This file is separately generated using 
+template/infobox data from BFG.  Program creates triples to assign keys for the
+reference number and add appropriate types to the existing topics.
 
 Created on Jan 14, 2010
 
-@author: tfmorris
+@author: Tom Morris <tfmorris@gmail.com>
+@copyright: 2010 Thomas F. Morris
+@license: Eclipse Public License (EPL) v1
 '''
 
 import json
