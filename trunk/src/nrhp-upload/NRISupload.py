@@ -199,7 +199,7 @@ class ArchStyle:
                 ids.append(id)
                 stats.incr('ArchStyle:',name)
             else:
-                log.warn('Failed to find Architecture style code:' + c)
+                log.debug('Failed to find Architecture style code:' + c)
         return ids
 
 
