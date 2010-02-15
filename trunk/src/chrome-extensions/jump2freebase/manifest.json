@@ -1,0 +1,17 @@
+{
+  "name": "Jump to Freebase",
+  "version": "1.0",
+  "description": "Navigate to Freebase topic from Wikipedia article (http://*.wikipedia.org/wiki/*) - based on Greasemonkey script by Zak Dweil.",
+  "icons":{
+    "16":"icon16.png",
+    "32":"icon32.png",
+    "64":"icon64.png",
+    "128":"icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*.wikipedia.org/wiki/*"],
+     "js": ["inject.js"]
+    }
+  ]
+}
