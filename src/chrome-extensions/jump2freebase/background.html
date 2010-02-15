@@ -1,0 +1,41 @@
+<html>
+<head>
+<script>
+  var lastTabId = 0;
+
+  chrome.tabs.onSelectionChanged.addListener(function(tabId) {
+    lastTabId = tabId;
+    chrome.pageAction.setIcon({path: "logo-freebase.png",
+        tabId: lastTabId});
+    chrome.pageAction.show(lastTabId);
+  });
+
+  chrome.tabs.getSelected(null, function(tab) {
+    lastTabId = tab.id;
+    chrome.pageAction.setIcon({path: "logo-freebase.png",
+        tabId: lastTabId});
+    chrome.pageAction.show(lastTabId);
+  });
+
+  chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+	  if (tab.url.indexOf('http://en.wikipedia.org/wiki/') < 0) return;
+	    chrome.pageAction.setIcon({path: "logo-freebase.png",
+	        tabId: tab.id});
+            chrome.pageAction.setTitle({title:tab.url, tabId:tab.id});
+            chrome.pageAction.show(tab.id);
+  });
+  
+  // Called when the user clicks on the page action.
+  chrome.pageAction.onClicked.addListener(function(tab) {
+    chrome.pageAction.setIcon({path: "logo-freebase.png",
+                               tabId: tab.id});
+    chrome.pageAction.setTitle({title: "foo", tabId: tab.id});
+
+  });
+
+</script>
+</head>
+<body>
+<canvas id="canvas" width="19" height="19"></canvas>
+</body>
+</html>
