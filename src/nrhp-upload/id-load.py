@@ -7,7 +7,7 @@ reference number and add appropriate types to the existing topics.
 Created on Jan 14, 2010
 
 @author: Tom Morris <tfmorris@gmail.com>
-@copyright: 2010 Thomas F. Morris
+@copyright: Copyright 2010 Thomas F. Morris
 @license: Eclipse Public License (EPL) v1
 '''
 

@@ -1,12 +1,28 @@
 '''
-Check previously id pairs previously extracted from Wikipedia using BFG
-against the current Freebase graph and note whether they are OK, missing,
-or have already been added, but for a different topic (a sign that the
-two topics need to be reviewed for merging).
+Check previously id pairs previously extracted from Wikipedia using 
+BFG (bfg-wex/nrhp-ids.py) against the current Freebase graph and
+note whether they are OK, missing, or have already been added, 
+but for a different topic (a sign that the two topics need to be
+reviewed for merging).
 
-Created on Jan 14, 2010
+Expected input is a three column TSV file:
 
-@author: tfmorris
+  index<tab>Wikipedia ID<tab>NRIS ID
+
+Output format is
+
+  total_count/missing_count/mismatch_count<space><keyword><space>NRIS ID<space>Freebase ID
+
+where keyword is
+
+  keyword:= missing | mismatch | merge
+  
+A simple grep filter will produce a file that can be used by the next stage in the pipe.
+
+@since Jan 14, 2010
+@author: Tom Morris <tfmorris@gmail.com>
+@copyright Copyright 2010. Thomas F. Morris
+@license: EPL V1
 '''
 
 import csv
@@ -49,7 +65,7 @@ def query(session, wpid,nrisid):
                                        '/base/usnris/nris_listing/item_number':nrisid})
             if result2:
                 if result2['key'] and result2['key'][0]['value'] != wpid:
-                    return 'badmatch %s %s' % (result['guid'],result2['guid'])
+                    return 'mismatch %s %s' % (result['guid'],result2['guid'])
                 else:
                     # TODO do some extra verification to make sure it's a topic we created?
                     return 'merge %s %s' % (result['guid'],result2['guid'])
@@ -66,7 +82,7 @@ def main():
     count = 0
     missing = 0
     mismatch = 0
-    start = 18422
+    start = 0
     for nrid,wpid in ids.iteritems():
         count += 1
         if count >= start:
