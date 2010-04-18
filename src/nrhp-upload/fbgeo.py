@@ -267,26 +267,21 @@ def test():
     _log.addHandler(logging.StreamHandler())
     _log.setLevel(logging.DEBUG)
     tests = [('Newlin Twp.','Chester','PA','/en/newlin_township'),
-#             ('St. Petersburg Beach','Pinellas', 'FL',''),
+             ('St. Petersburg Beach','Pinellas', 'FL','/en/st_pete_beach'),
              ('W. Bradford Twp.','Chester', 'PA','/en/west_bradford_township'),
              ('S. Brunswick Township','Middlesex', 'NJ','/en/south_brunswick_township'),
              ('Mt. Laurel Township','Burlington', 'NJ', '/en/mount_laurel_township'),
 #             ('','',''),
-#             ('','',''),
-#             ('','',''),
-#             ('','',''),
-#             ('','',''),
-#             ('','',''),
              ]
     session = FreebaseSession('www.freebase.com','','')
+    session.touch()
     for t in tests:
         result =queryCityTown(session, t[0], queryUsStateGuid(session, t[2]), t[1])
         if result and result[0] and result[0]['id']:
             id = result[0]['id']
-            print 'Passed ' if t[3]==id else 'FAILED ',t[0:2],id,result[0]['name']
+            print 'Passed ' if t[3]==id else 'FAILED ',t[0:3],id,result[0]['name']
         else:
             print 'FAILED ',t
             
 if __name__ == '__main__':
     test()
-    
