@@ -4,7 +4,7 @@ Geographic utilities
 Created on Feb 28, 2009
 
 @author: Tom Morris <tfmorris@gmail.com>
-@copyright: 2009 Thomas F. Morris
+@copyright: 2009,2010 Thomas F. Morris
 @license: Eclipse Public License v1 http://www.eclipse.org/legal/epl-v10.html
 
 '''
@@ -83,18 +83,23 @@ def parseGeocode(geocode):
 def queryUsStateGuids(session):
     '''Query Freebase and return dict of ids for states keyed by 2 letter state code '''
     query = [{'guid' : None,
-               'id' : None,
-               'name' : None,
-               'iso_3166_2_code' : None,
-               'iso:iso_3166_2_code~=' : '^US-*',
-               'type' : '/location/administrative_division'
-    }]
+              'id' : None,
+              'name' : None,
+              'iso_3166_2_code' : None, #Not unique, but if this fails, we need to review assumptions anyway
+              'key': {'namespace': '/authority/iso/3166-2',
+                      'value~=':   '^US-*',
+                      'limit':     0
+                      },
+              'type' : '/location/administrative_division'
+              }]
     results = session.fbRead(query)
     return dict([ (state['iso_3166_2_code'][3:5],state['guid']) for state in results])
 
 def _initUsStateGuids(session):
     if not _usStates:
+        _log.debug('Initializing U.S. States cache')
         _usStates.update(queryUsStateGuids(session))
+        _log.debug('U.S. States cache size = %d' % len(_usStates))
 
 def queryUsStateGuid(session, state):
     '''Return Guid for state from cache'''
@@ -259,11 +264,13 @@ def utm2lonlat(zone,east,north):
     return x1,y1
 
 def test():
-    tests = [('Newlin Twp.','Chester','PA'),
-#             ('St. Petersburg Beach','Pinellas', 'FL'),
-             ('W. Bradford Twp.','Chester', 'PA'),
-             ('S. Brunswick Township','Middlesex', 'NJ'),
-             ('Mt. Laurel Township','Burlington', 'NJ'),
+    _log.addHandler(logging.StreamHandler())
+    _log.setLevel(logging.DEBUG)
+    tests = [('Newlin Twp.','Chester','PA','/en/newlin_township'),
+#             ('St. Petersburg Beach','Pinellas', 'FL',''),
+             ('W. Bradford Twp.','Chester', 'PA','/en/west_bradford_township'),
+             ('S. Brunswick Township','Middlesex', 'NJ','/en/south_brunswick_township'),
+             ('Mt. Laurel Township','Burlington', 'NJ', '/en/mount_laurel_township'),
 #             ('','',''),
 #             ('','',''),
 #             ('','',''),
@@ -273,9 +280,13 @@ def test():
              ]
     session = FreebaseSession('www.freebase.com','','')
     for t in tests:
-        result =queryCityTown(session, t[0], queryUsStateGuid(session, t[2]), t[1]) 
-        print t,result[0]['id'],result[0]['name']
-        
+        result =queryCityTown(session, t[0], queryUsStateGuid(session, t[2]), t[1])
+        if result and result[0] and result[0]['id']:
+            id = result[0]['id']
+            print 'Passed ' if t[3]==id else 'FAILED ',t[0:2],id,result[0]['name']
+        else:
+            print 'FAILED ',t
+            
 if __name__ == '__main__':
     test()
     
