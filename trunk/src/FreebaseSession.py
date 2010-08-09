@@ -13,17 +13,17 @@ from optparse import OptionParser
 from freebase.api import HTTPMetawebSession, MetawebError
 
 SEPARATORS = (",", ":")
+_log = logging.getLogger('FreebaseSession')
 
 def getSessionFromArgs():
     '''Convenience method to create a Freebase session using the username, 
     password, and host in the command line arguments.
     Session is NOT logged in on return.'''
     
-    log = logging.getLogger('FreebaseSession')
     parser = OptionParser()
     parser.add_option("-u", "--user", dest="user", help="Freebase username")
     parser.add_option("-p", "--password", dest="pw", help="Freebase password")
-    parser.add_option("-s", "--host", dest="host", help="service host", default = 'www.sandbox-freebase.com')
+    parser.add_option("-s", "--host", dest="host", help="service host", default = 'api.sandbox-freebase.com')
    
     (options, args) = parser.parse_args()
 
@@ -35,7 +35,7 @@ def getSessionFromArgs():
 #    if not pw:
 #        pw = getpass.getpass()
 
-    log.info( 'Host: %s, User: %s' % (host, user))
+    _log.info( 'Host: %s, User: %s' % (host, user))
     return FreebaseSession(host, username=user, password=pw)
 
 class FreebaseSession(HTTPMetawebSession):
@@ -48,10 +48,15 @@ class FreebaseSession(HTTPMetawebSession):
     reads = 0
     writeErrors = 0
     readErrors = 0
+    deferred = True # Convert MQL to triples for later writing with triple loader
+    triples = []
+    
     
     def __init__(self,server,username,password):
         super(FreebaseSession,self).__init__(server, username, password)
         self.log = logging.getLogger('FreebaseSession')
+        self.triples = []
+        self.encoder = json.JSONEncoder()
     
     def fbRead(self, query):
         #log.debug([  '  Read query = ', query])
@@ -67,8 +72,89 @@ class FreebaseSession(HTTPMetawebSession):
 #       log.debug([ '    Response = ',response])    
         return response
 
+    def triple(self, subject, predicate, object):
+        return self.encoder.encode({'s':subject,'p':predicate,'o':object})
+
+    def getType(self,query):
+        # loop through all types and return last one
+        return query.type
+
+    def expandProperty(self,type,prop):
+        propMap = {'/type/object/type' : 'type',
+                   '/type/object/name' : 'name',
+                   '/type/object/id'   : 'id'
+                   }
+        if prop[0] != '/':
+            prop = type + '/' + prop;
+        if propMap[prop]:
+            prop=propMap[prop]
+
+    def formatObject(self, object):
+        # handle CVTs and any other special requirements
+        operation = object.connect
+        if operation == 'update': # ?? can't handle??
+            pass
+        elif operation == 'insert': #OK
+            pass
+        else:
+            pass
+        operation = object.create
+        if operation == 'unless_connected':
+            pass
+        elif operation == 'always':
+            pass
+        else:
+            pass
+
+        # 'lang':'/lang/en' - OK, noop
+        # 'type':'/type/text' - OK, string literal
+        return object
+
+    def getId(self,query):
+        if query.mid:
+            return query.mid
+        elif query.guid:
+            return query.guid
+        elif query.id:
+            return query.id
+        return None
+
+    def triplify(self,query):
+        triples = []
+        subject = self.getId(query);
+
+        type = self.getType(query)
+        for k,v in query.iteritems():
+            pn = self.expandProperty(k)
+            pv = self.formatObject(v) # can expand to multiple triples and/or CVT
+            triples.append(self.encoder.encode(self.triple(subject,pn,pv)))
+
+        return '\n'.join(triples)
+
+    def fbWriteLater(self,query):
+        t = self.triplify(query)
+        _log.debug(t)
+        self.triples.extend(t)
+        return '' # TODO return success response
+
+    def fbWriteFlush(self):
+        '''Submit all pending triples for processing'''
+        payload= '\n'.join(self.triples)
+        # login right before submission to close window where server reboots can affect us
+        session.login()
+        resp,body = session.tripleSubmit(triples=payload,
+                                         job_comment='A job comment here',
+                                         data_comment="%d triples" % len(self.triples))
+
+        # if successful
+        self.triples = []
+
+        print resp,body
+
     def fbWrite(self, query):
         #log.debug(['  Write query = ', query])
+        if self.deferred:
+            return self.fbWriteLater(self,query)
         try:
             self.writes += 1
             response = self.mqlwrite(query)
@@ -181,7 +267,7 @@ class FreebaseSession(HTTPMetawebSession):
         # Huge hack to swap out service URL so we can use session login cookie
         domain = 'data.labs.freebase.com'
         # copy cookies over to new domain
-        for name,c in self.cookiejar._cookies['www.freebase.com']['/'].items():
+        for name,c in self.cookiejar._cookies['api.freebase.com']['/'].items():
             c.domain=domain
             self.cookiejar.set_cookie(c)
 
@@ -221,6 +307,6 @@ class FreebaseSession(HTTPMetawebSession):
     
     
 if __name__ == "__main__":
-    session = FreebaseSession('www.sandbox-freebase.com','tfmorris','password')
+    session = FreebaseSession('api.sandbox-freebase.com','tfmorris','password')
     result = session.fbWrite({"create":"unconditional","guid":None})
         
