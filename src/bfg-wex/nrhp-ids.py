@@ -58,12 +58,13 @@ def main ():
     log.info("Beginning scan at %s" % str(datetime.now()))
 
     bfgSession = BfgSession()
-    fbSession = HTTPMetawebSession('http://www.freebase.com')
+    fbSession = HTTPMetawebSession('http://api.freebase.com')
 
     idmap = {}
     serial = 0
     # TODO: Encode the template name
     pages = wpTemplateQuery(bfgSession, 'Infobox nrhp', 100000)
+    print '\t'.join(['Seq', 'wpid', 'nrisid'])
     for wpid,result in pages:
         serial+=1
         nrisid=None

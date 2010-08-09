@@ -9,7 +9,7 @@ from freebase.api import HTTPMetawebSession, MetawebError
 COUNT = 10
 
 def main():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     query = [{"t:type":"/common/topic",
               "type":[], # multiple types allowed, so return is a list
               "timestamp":None,

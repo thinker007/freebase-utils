@@ -16,7 +16,7 @@ def normalize_publisher_name(name):
     return name
 
 def main():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     query = [{"t:type":"/book/publishing_company",
               "type":[], 
               "timestamp":None,

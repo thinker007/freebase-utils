@@ -7,7 +7,7 @@ Created on Aug 3, 2009
 from freebase.api import HTTPMetawebSession, MetawebError
 
 def main():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     since = "2009-10-01"
     query = [{"type":"/pipeline/merge_task",
               "timestamp":None,

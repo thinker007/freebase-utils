@@ -17,7 +17,7 @@ from freebase.api import HTTPMetawebSession
 
 def main():
     parser = OptionParser()
-    parser.add_option("-s", "--host", dest="host", help="service host", default = 'www.freebase.com')   
+    parser.add_option("-s", "--host", dest="host", help="service host", default = 'api.freebase.com')   
     (options, args) = parser.parse_args()
 
     host = options.host

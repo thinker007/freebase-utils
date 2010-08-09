@@ -11,12 +11,10 @@ Requires a version of freebase-api greater than 1.0.3
 @license: EPL v1
 '''
 
-import sys
-import logging
 from freebase.api import HTTPMetawebSession
 
 def main():
-    session = HTTPMetawebSession('www.sandbox-freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
 
     # Query to find the most recent site with a geolocation
     q = [{
