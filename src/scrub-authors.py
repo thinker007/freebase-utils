@@ -15,7 +15,7 @@ import logging
 from freebase.api import HTTPMetawebSession,MetawebError
 
 badprefix = ['jr','sr','inc','phd','ph.d','m.d','iii']
-onlyprefix = ['mr','mrs','dr','sir','dame']
+onlyprefix = ['mr','mrs','dr','sir','dame','rev']
 
 badwords = [
             'agency',
@@ -23,6 +23,7 @@ badwords = [
             'american',
             'assembly',
             'association',
+            'associates',
             'australia',
             'australian',
             'bank',
@@ -32,15 +33,19 @@ badwords = [
             'center',
             'centre',
             'church',
+#            'citizen',
             'club',
             'collection',
             'commission',
             'committee',
+            'commonwealth',
+            'common-wealth',
             'council',
             'department',
             'dept.',
             'editors',
             'federation',
+#            'friend',
             'foundation',
             'galleries',
             'gallery',
@@ -48,10 +53,13 @@ badwords = [
             'institut.',
             'institute',
             'libraries',
+            'laboratory',
             'library',
             'limited',
             'ltd.',
+            'magazine',
             'mission',
+            'member', # whitelist things which start 'member of' to catch oldie worldy anon. authors
             'museum',
 #            'New York',
             'office',
@@ -61,11 +69,12 @@ badwords = [
             'research',
             'school',
             'schools',
-            'secreteriat',
+            'secretariat',
             'service',
             'services',
-            'society',
+            'society', # Not 100% because of "member of ___ society"
             'staff',
+            'trust', # more for stock holders than authors
             'university',
             'and',
             '&',
@@ -89,12 +98,14 @@ def badname(s):
     # TODO check for bad punctuation, particularly reverse parens x) yyy (z
     word = s.split()
 
-    # Check first word for things which should be last word
+    # Check first word for things which should only be last word
     f = word[0].strip().lower()
     if f[-1] == '.':
         f=f[:-1]
     if f in badprefix:
         return True
+    if f in onlyprefix:
+        del word[0]
 
     for w in word:
         lw = w.lower()
@@ -107,6 +118,7 @@ def badname(s):
 
         b = bisect_left(badwords,lw)
         if b >= 0 and b < badwordsmax-1 and badwords[b] == lw:
+            # TODO add secondary check for ambiguous words which can be personal names e.g. Service
             return True
         
     # Check against name list and kick low probability names?
@@ -130,6 +142,7 @@ def main():
          't2:type':'/people/person',
          'id' : None,
          'name' : None,
+         'creator' : None,
 #          'timestamp<=' : '2009-05-01',
 #          'timestamp>=' : '2009-05-01',
 #          'timestamp<=' : '2009-07-30',
@@ -144,8 +157,10 @@ def main():
         total += 1
         if r.name and badname(r.name):
             bad += 1
-            print '\t'.join([str(bad), str(total), r.id,r.name])
+            print '\t'.join([str(bad), str(total), r.id,r.name,r.creator]).encode('utf-8')
 
  
 if __name__ == '__main__':
+    print 'Starting at %s' % str(datetime.now())
     main()
+    print 'Done at %s' % str(datetime.now())
