@@ -44,7 +44,7 @@ def main():
     end_year = 2010
     types = ["/book/author","/book/book","/book/book_edition"]
     parser = OptionParser()
-    parser.add_option("-s", "--host", dest="host", help="service host", default = 'www.freebase.com')   
+    parser.add_option("-s", "--host", dest="host", help="service host", default = 'api.freebase.com')   
     (options, args) = parser.parse_args()
 
     host = options.host

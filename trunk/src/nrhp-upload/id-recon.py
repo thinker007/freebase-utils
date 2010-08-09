@@ -78,7 +78,7 @@ def query(session, wpid,nrisid):
                                
 def main():
     ids = readids('nris-ids.csv')
-    session = HTTPMetawebSession('www.freebase.com');
+    session = HTTPMetawebSession('api.freebase.com');
     count = 0
     missing = 0
     mismatch = 0

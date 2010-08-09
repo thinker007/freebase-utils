@@ -119,7 +119,9 @@ def queryCityTownGuid(session, townName, stateGuid, countyName=None):
     if not results:
         # try again without county if we got no exact match
         results = queryCityTown(session, townName, stateGuid)
-    if len(results) == 1:
+    if not results:
+        return None
+    elif len(results) == 1:
         return results[0]['guid']
     elif len(results) == 2:
         # HACK to disambiguate misnamed CDPs until Freebase gets cleaned up
@@ -132,10 +134,11 @@ def queryCityTownGuid(session, townName, stateGuid, countyName=None):
             # TODO One cause of multiple matches are city/town pairs with the same name
             # they often can be treated as a single place, so we might be able to figure
             # out a way to deal with this
-            _log.error('Multiple matches for city/town '+townName+' in state '+stateGuid)
+            _log.error('Multiple matches for city/town %s in state %s' % (townName,stateGuid))
             return None
         _log.warn('Multiple matches for city/town ' + townName + ' in state ' + stateGuid +' picked nonCDP ' + result)
         return result
+    _log.error('Multiple matches for city/town '+townName+' in state '+stateGuid + ' ' + result)
     return None
     
 
@@ -273,7 +276,7 @@ def test():
              ('Mt. Laurel Township','Burlington', 'NJ', '/en/mount_laurel_township'),
 #             ('','',''),
              ]
-    session = FreebaseSession('www.freebase.com','','')
+    session = FreebaseSession('api.freebase.com','','')
     session.touch()
     for t in tests:
         result =queryCityTown(session, t[0], queryUsStateGuid(session, t[2]), t[1])

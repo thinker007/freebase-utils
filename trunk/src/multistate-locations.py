@@ -20,7 +20,7 @@ def main():
     }
 
 
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     result = session.mqlreaditer([q])
     total = 0
     bad = 0

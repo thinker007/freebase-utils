@@ -344,7 +344,7 @@ def main():
 #             'Charles Francis ADAMS',
 #             'George BAER',
              ]
-    session = HTTPMetawebSession('www.sandbox-freebase.com')
+    session = HTTPMetawebSession('api.sandbox-freebase.com')
     for n in names:
         p = FbPerson()
         if isinstance(n, str):

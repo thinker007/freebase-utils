@@ -83,8 +83,11 @@ def out_degree(prop, nodes):
         node_count += 1
         next = next[prop][0].id
 
+def edges():
+    pass
+
 def main():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     matches = 0
     total = 0
 #    print '\t'.join(['Type ID', 'Instances', '# of Subgraphs',
@@ -228,7 +231,7 @@ def traverse_subtree(list, map, props):
         
         
 def test():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     props = ['/music/instrument/family', '/music/instrument/variation']
     traverse_tree(session, '/music/instrument', props)
     

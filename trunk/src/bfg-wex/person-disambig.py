@@ -29,7 +29,7 @@ def fetchTopic(fbsession, wpid):
         if not name:
             name = ''
         id = t.id
-        print '\t'.join([topic[0].id,name,','.join(t.type)])
+        print '\t'.join([topic[0].id,name,','.join(t.type)]).encode('utf-8')
     return topic
 
                 
@@ -58,7 +58,7 @@ def main ():
     log.info("Beginning scan for Wikipedia disambiguation pages on Freebase at %s" % str(datetime.now()))
 
     bfgSession = BfgSession()
-    fbSession = HTTPMetawebSession('http://www.freebase.com')
+    fbSession = HTTPMetawebSession('http://api.freebase.com')
     
     pages = wpHndisPages(bfgSession, 30000)
     for wpid in pages:

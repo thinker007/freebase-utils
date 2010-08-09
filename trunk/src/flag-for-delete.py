@@ -23,7 +23,7 @@ def main():
     parser = OptionParser()
     parser.add_option("-u", "--user", dest="user", help="Freebase username", default='tfmorris')
     parser.add_option("-p", "--password", dest="pw", help="Freebase password")
-    parser.add_option("-s", "--host", dest="host", help="service host", default = 'www.sandbox-freebase.com')
+    parser.add_option("-s", "--host", dest="host", help="service host", default = 'api.sandbox-freebase.com')
    
     (options, args) = parser.parse_args()
 

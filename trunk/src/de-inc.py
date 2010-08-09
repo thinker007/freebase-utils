@@ -6,7 +6,7 @@ from freebase.api import HTTPMetawebSession, MetawebError
 
 
 def main():
-    session = HTTPMetawebSession('www.freebase.com')
+    session = HTTPMetawebSession('api.freebase.com')
     query = {
       "type":"/business/company",
       'name':None,
