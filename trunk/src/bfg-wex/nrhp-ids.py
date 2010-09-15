@@ -8,6 +8,8 @@ A later stage of processing will user this information to see
 which topics were misreconciled using previous strategies and
 need to be merged (or split, but hopefully very few).
 
+This took about 3 hrs to return 25,000 results in August, 2010.
+
 @author: Tom Morris <tfmorris@gmail.com>
 @copyright 2009 Thomas F. Morris
 @license Eclipse Public License v1
@@ -94,6 +96,7 @@ def main ():
 #    for wpid in idmap:
 #        topic = fetchTopic(fbSession, wpid, idmap[wpid])
  
+    print "Done at %s" % str(datetime.now()) # put in output so we know it's complete
     log.info("Done at %s" % str(datetime.now()))
 
     
