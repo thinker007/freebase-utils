@@ -86,7 +86,7 @@ def main ():
     log.info("Beginning at %s" % str(datetime.now()))
 
     bfgSession = BfgSession()
-    fbSession = HTTPMetawebSession('http://www.freebase.com')
+    fbSession = HTTPMetawebSession('http://api.freebase.com')
 
     stats = {}
     stats['missing'] = 0
