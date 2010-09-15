@@ -1,5 +1,5 @@
 '''
-Utility to extract Math Genealogy ID numbers for mathemeticians who are
+Utility to extract Math Genealogy ID numbers for mathematicians who are
 in both Wikipedia and Freebase
 
 @author: Tom Morris <tfmorris@gmail.com>
@@ -38,7 +38,7 @@ def fetchTopic(fbsession, wpid, mgid):
             t.type.remove('/people/person')
         # http://genealogy.math.ndsu.nodak.edu/id.php?id=nnnn
         print '\t'.join(['http://genealogy.math.ndsu.nodak.edu/id.php?id='+mgid, 
-                         id,name,','.join(t['/people/person/profession']),','.join(t.type)])
+                         id,name,','.join(t['/people/person/profession']),','.join(t.type)]).encode('utf-8')
     return topic
 
                 
@@ -58,7 +58,7 @@ def main ():
     log.info("Beginning scan at %s" % str(datetime.now()))
 
     bfgSession = BfgSession()
-    fbSession = HTTPMetawebSession('http://www.freebase.com')
+    fbSession = HTTPMetawebSession('http://api.freebase.com')
 
     idmap = {}
     pages = wpMathGenealogy(bfgSession, 30000)
