@@ -23,6 +23,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 import traceback
 import urllib
@@ -58,7 +59,7 @@ logging.basicConfig(level=logging.DEBUG)
 logging.getLogger().setLevel(logging.WARN) # dial down freebase.api's chatty root logging
 log = logging.getLogger('NRISupload')
 log.setLevel(logging.DEBUG)
-   
+
 baseUrl = 'http://www.nr.nps.gov/NRISDATA/'
 workDir = ''
 masterFile = 'master.exe'
@@ -164,10 +165,13 @@ def uniquifyYears(seq):
 
 class ArchStyle:
 
+    SKIP_STYLES =  ['01','80','90']
+
     def __init__(self,session):
         '''Query Freebase server for all architectural styles in our short table'''
     
         # Remap some NPS architecture style names to their Freebase equivalents
+        # TODO Early Republic == ?
         styleMap = {'bungalow/craftsman' : 'american craftsman',
                     'mission/spanish revival' : 'mission revival',
                     'colonial' : 'american colonial',
@@ -179,7 +183,7 @@ class ArchStyle:
         
         self.ids={}
         for c in lookupKeys('ARSTYLM'):
-            if not c in ['01','80','90']: # Skip None, Other, Mixed
+            if not c in self.SKIP_STYLES: # Skip None, Other, Mixed
                 name = lookup('ARSTYLM', c)[0].lower()
                 name = styleMap.get(name, name)
                 result = session.queryTypeAndName('/architecture/architectural_style', [name])
@@ -189,17 +193,17 @@ class ArchStyle:
                     self.ids[c]=(result[0],name)
 
     def lookup(self,codes):
-        '''Look up Freebase ID for architectural style.  Return None if not found'''
-        # TODO Add skip list (other, multiple, etc)
-    
+        '''Look up Freebase IDs for a list of architectural styles.  
+           Return empty list if none found.'''
         ids = []
         for c in codes:
-            if c in self.ids:
-                id,name=self.ids[c]
-                ids.append(id)
-                stats.incr('ArchStyle:',name)
-            else:
-                log.debug('Failed to find Architecture style code:' + c)
+            if c not in self.SKIP_STYLES:
+                if c in self.ids:
+                    id,name=self.ids[c]
+                    ids.append(id)
+                    stats.incr('ArchStyle:',name)
+                else:
+                    log.debug('Failed to find Architecture style code:' + c)
         return ids
 
 
@@ -258,7 +262,8 @@ def addAliases(session, guid, aliases):
                  '/common/topic/alias': [{'connect':'insert', 
                                           'lang': '/lang/en',
                                           'type': '/type/text',
-                                          'value':a.strip()} for a in set(aliases)]
+                                          'value':a.strip()
+                                          } for a in set(aliases)]
                  }
         log.debug('Adding aliases ' + repr(aliases) + ' to ' + guid)
         return session.fbWrite(query)
@@ -343,7 +348,11 @@ def updateTypeAndRefNum(session, topicGuid, refNum, resourceType, mandatoryTypes
         if not t in types:
             types.append(t)
     # Add any missing types, our unique reference number, & significance level
-    query = {'guid': topicGuid, 'type': [{'connect': 'insert', 'id': t} for t in types], '/base/usnris/nris_listing/item_number': {'connect': 'insert', 'value': refNum}}
+    query = {'guid': topicGuid, 
+             'type': [{'connect': 'insert', 'id': t} for t in types], 
+             '/base/usnris/nris_listing/item_number': {'connect': 'insert', 
+                                                       'value': refNum}
+             }
     if significanceGuid:
         query['/base/usnris/nris_listing/significance_level'] = {'connect': 'update', 
                                                                  'guid': significanceGuid}
@@ -395,15 +404,11 @@ def addMisc(session, topicGuid, significantPersonIds, significantYears, culture)
     if culture:
         # TODO: screen for dupes which differ only in case since MQL considers them identical (set() won't work)
         query['/base/usnris/nris_listing/cultural_affiliation'] = [{'connect': 'insert', 'lang': '/lang/en', 'value': c} for c in set(culture)]
-    # TODO: Try to match free form text to a /people/ethnicity topic
+    # TODO: Try to match free form text to a /people/ethnicity topic? (or queue for human review)
     
     if query:
         query['guid'] = topicGuid
         return session.fbWrite(query)
-
-def createPerson(session, name):
-    # Might not be a good idea to assume they're all deceased, but it's a *historic* database
-    return createTopic(session, name, ["/people/person","/people/deceased_person"])
 
 def queryNrisTopic(session, refNum, wpid):
     '''Query server for a unique topic indexed by our NRIS reference number'''
@@ -522,8 +527,7 @@ def loadGeo(file,coordinates):
                 count += 1
             except:
                 log.warn('failed to convert coordinates %s, %s, %s for id %s' % (zone,easting,northing,id))
-                count -= 1
-    log.debug('Loaded %d of %d coordinate pairs' % (count,total))
+    log.debug('Loaded %d missing coordinate pairs (of %d) from %s (already had %d from higher quality KMZ)' % (count,total,file, total-count))
     return coordinates
     
 def loadIds(file):
@@ -799,7 +803,7 @@ def main():
             topicGuid,topicName = queryTopic(session, refNum, wpid, name, aliases, True)
 
             if topicGuid == -1:
-                log.debug('Lookup failure (problem ID mismatch) - skipping - ' 
+                log.debug('Lookup failure (probably ID mismatch) - skipping - ' 
                           + ' '.join([refNum, resourceType, state, str(significance), name, ' - ', category]))
                 stats.incr('TopicMatch','Mismatch')
                 continue # error on lookup, just bail out
@@ -921,10 +925,31 @@ def main():
 #    log.debug 'Cleaning ', tempDir
 #    shutil.rmtree(tempDir, True)
     
+def installThreadExcepthook():
+    """
+    Workaround for sys.excepthook thread bug
+    From http://spyced.blogspot.com/2007/06/workaround-for-sysexcepthook-bug.html
+   
+    (https://sourceforge.net/tracker/?func=detail&atid=105470&aid=1230540&group_id=5470).
+    Call once from __main__ before creating any threads.
+    If using psyco, call psyco.cannotcompile(threading.Thread.run)
+    since this replaces a new-style class method.
+    """
+    init_old = threading.Thread.__init__
+    def init(self, *args, **kwargs):
+        init_old(self, *args, **kwargs)
+        run_old = self.run
+        def run_with_except_hook(*args, **kw):
+            try:
+                run_old(*args, **kw)
+            except (KeyboardInterrupt, SystemExit):
+                raise
+            except:
+                sys.excepthook(*sys.exc_info())
+        self.run = run_with_except_hook
+    threading.Thread.__init__ = init
+
 if __name__ == '__main__':
-     main() 
-
-
-
-
+    installThreadExcepthook()
+    main() 
 
